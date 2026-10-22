@@ -18,9 +18,10 @@ uxid conformance corpus at uxid-ex's tag `v2.10.0`, vendored byte for byte and
 run with no skip list.
 
 Compatibility: the shared library's SOVERSION is the major version, 1, and the
-CMake package's version file accepts a request for any 1.x version
-(`SameMajorVersion`), so a later 1.x release keeps the API and the ABI of
-1.0.0. Enum values are only ever added after the last one; `uxid_options`,
+CMake package's version file (`SameMajorVersion`) accepts a request for any 1.x
+version up to its own, so a later 1.x release satisfies a request for 1.0 and
+keeps the API and the ABI of 1.0.0. The values of `uxid_status` and
+`uxid_decode_status` are only ever added after the last one; `uxid_options`,
 `uxid_decode_options`, `uxid_decoded` and `uxid_draw_source` keep their size
 and the offset of every field from one version to the next, a later version
 placing a new field in reserved slots; and `uxid_monotonic`, whose contents are
@@ -48,4 +49,8 @@ private, keeps its size.
 - `UXID_BODY_MAX_LENGTH` (26) sizes an output buffer, and `UXID_API` marks the exported functions.
 - On Windows the library links `bcrypt`, which the pkg-config file lists in `Libs.private`.
 - `-Werror` and `/WX` apply only when uxid is the top-level CMake project, through the `UXID_WARNINGS_AS_ERRORS` option; a project that adds uxid with `add_subdirectory` or `FetchContent` still sees the warnings.
+- `uxid_status` holds `UXID_OK` and the six generation errors: `UXID_ERR_COMPACT_TIME_OUT_OF_RANGE`, `UXID_ERR_RAND_WIDTH_MISMATCH`, `UXID_ERR_RAND_SIZE_TOO_LARGE`, `UXID_ERR_FROM_WITH_MONOTONIC`, `UXID_ERR_RAND_WITH_FROM` and `UXID_ERR_RAND_WITH_MONOTONIC`.
+- `uxid_size` names the sizes `UXID_SIZE_XS`, `UXID_SIZE_S`, `UXID_SIZE_M`, `UXID_SIZE_L` and `UXID_SIZE_XL`, with the long spellings `UXID_SIZE_XSMALL`, `UXID_SIZE_SMALL`, `UXID_SIZE_MEDIUM`, `UXID_SIZE_LARGE` and `UXID_SIZE_XLARGE` for the same values; `uxid_case` names `UXID_CASE_LOWER` and `UXID_CASE_UPPER`.
+- `uxid_byte_source` is the byte source's function pointer type and `uxid_clock` the decoder's clock's; each is called with the context pointer given beside it.
+- `uxid_decoded.has_time` says whether the decoded body carries a time: false for a deterministic body.
 - `UXID_VERSION_MAJOR`, `UXID_VERSION_MINOR`, `UXID_VERSION_PATCH` and `UXID_VERSION_STRING` give the library's version; the CMake package version and the pkg-config version are read from them.

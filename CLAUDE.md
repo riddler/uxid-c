@@ -162,11 +162,14 @@ coverage script under `scripts/`, the CI and release workflows under
 `.github/workflows/` and the changelog fragment rule in
 `changelog.d/README.md`, beside these agent instructions, the wurk manifest
 (`.claude/wurk.json`) and the tracker files under `.beads/`.
-`include/uxid.h` declares the version macros and generation, time-based
+`include/uxid.h` declares the version macros, generation, time-based
 and deterministic (`uxid_options`, `uxid_options_init`, `uxid_generate`,
-`uxid_status` and `uxid_status_name`); `src/uxid.c` holds its own SHA-256
-for the deterministic ids. Decoding, the validity checks, the monotonic
-generator and the vendored corpus arrive with later changes; until they do,
+`uxid_status` and `uxid_status_name`), decoding (`uxid_decode_options`,
+`uxid_decode_options_init`, `uxid_clock`, `uxid_decoded`, `uxid_decode` and
+`uxid_decode_status`) and the validity checks (`uxid_is_valid` and
+`uxid_is_deterministic`); `src/uxid.c` holds its own SHA-256 for the
+deterministic ids. The monotonic generator and the vendored corpus arrive
+with later changes; until they do,
 the sentences in this file about the 1.0.0 package and its corpus describe
 the target, not the current tree.
 

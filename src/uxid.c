@@ -606,3 +606,289 @@ uxid_status uxid_generate(char *out, size_t out_size, const uxid_options *opts)
     *at = '\0';
     return UXID_OK;
 }
+
+/* One day in milliseconds: how far ahead of the clock a compact time may be. */
+#define UXID_ONE_DAY_MS UINT64_C(86400000)
+
+/* The number of reserved decode option slots. */
+#define UXID_DECODE_RESERVED_SLOTS                                                                                     \
+    (sizeof((uxid_decode_options *)0)->reserved / sizeof((uxid_decode_options *)0)->reserved[0])
+
+/* The number of reserved decoded slots. */
+#define UXID_DECODED_RESERVED_SLOTS (sizeof((uxid_decoded *)0)->reserved / sizeof((uxid_decoded *)0)->reserved[0])
+
+void uxid_decode_options_init(uxid_decode_options *opts)
+{
+    if (opts == NULL) {
+        return;
+    }
+    memset(opts, 0, sizeof *opts);
+    opts->delimiter = "_";
+    opts->clock = NULL;
+    opts->clock_ctx = NULL;
+    for (size_t i = 0; i < UXID_DECODE_RESERVED_SLOTS; i++) {
+        opts->reserved[i] = NULL;
+    }
+}
+
+/* The value of one Crockford Base32 symbol in either case, or -1. */
+static int uxid_symbol_value(unsigned char c)
+{
+    if (c >= '0' && c <= '9') {
+        return c - '0';
+    }
+    if (c >= 'A' && c <= 'Z') {
+        c = (unsigned char)(c - 'A' + 'a');
+    }
+    if (c < 'a' || c > 'z') {
+        return -1;
+    }
+    for (int i = 10; i < 32; i++) {
+        if (uxid_lower_alphabet[i] == (char)c) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+/*
+ * The body of the len bytes at id: everything after the last delimiter a
+ * left-to-right scan finds, its matches not overlapping. *prefix_end is the
+ * delimiter's offset, or len when there is none (no prefix).
+ */
+static size_t uxid_split(const char *id, size_t len, const char *delimiter, size_t delimiter_len, size_t *prefix_end)
+{
+    size_t body_start = 0;
+    *prefix_end = len;
+    size_t at = 0;
+    while (delimiter_len <= len - at) {
+        if (memcmp(id + at, delimiter, delimiter_len) == 0) {
+            *prefix_end = at;
+            at += delimiter_len;
+            body_start = at;
+        } else {
+            at++;
+        }
+    }
+    return body_start;
+}
+
+/*
+ * The first rule the body of body_len bytes breaks, in the order empty,
+ * length, alphabet, or UXID_DECODE_OK with the size and time form its length
+ * gives.
+ */
+static uxid_decode_status uxid_check_body(const char *body, size_t body_len, uxid_size *size, bool *compact)
+{
+    *compact = false;
+    *size = UXID_SIZE_XL;
+    if (body_len == 0) {
+        return UXID_DECODE_EMPTY;
+    }
+    switch (body_len) {
+    case 10U:
+        *size = UXID_SIZE_XS;
+        break;
+    case 13U:
+        *size = UXID_SIZE_S;
+        *compact = true;
+        break;
+    case 14U:
+        *size = UXID_SIZE_S;
+        break;
+    case 18U:
+        *size = UXID_SIZE_M;
+        break;
+    case 21U:
+        *size = UXID_SIZE_L;
+        *compact = true;
+        break;
+    case 22U:
+        *size = UXID_SIZE_L;
+        break;
+    case 24U:
+        *compact = true;
+        break;
+    case 26U:
+        break;
+    default:
+        return UXID_DECODE_INVALID_LENGTH;
+    }
+    for (size_t i = 0; i < body_len; i++) {
+        if (uxid_symbol_value((unsigned char)body[i]) < 0) {
+            return UXID_DECODE_INVALID_CHARACTER;
+        }
+    }
+    return UXID_DECODE_OK;
+}
+
+/* A well-formed body and where it sits in the id. */
+struct uxid_parsed {
+    size_t prefix_end;
+    const char *body;
+    size_t body_len;
+    uxid_size size;
+    bool compact;
+};
+
+/*
+ * Splits and checks the id, the delimiter already known to be non-empty. A
+ * NULL id with len 0 is the empty string.
+ */
+static uxid_decode_status uxid_parse(const char *id, size_t len, const char *delimiter, struct uxid_parsed *parsed)
+{
+    if (id == NULL) {
+        parsed->prefix_end = 0;
+        parsed->body = NULL;
+        parsed->body_len = 0;
+        return UXID_DECODE_EMPTY;
+    }
+    size_t body_start = uxid_split(id, len, delimiter, strlen(delimiter), &parsed->prefix_end);
+    parsed->body = id + body_start;
+    parsed->body_len = len - body_start;
+    return uxid_check_body(parsed->body, parsed->body_len, &parsed->size, &parsed->compact);
+}
+
+/* Reads count symbols of a checked body as one integer, most significant first. */
+static uint64_t uxid_read_integer(const char *body, unsigned count)
+{
+    uint64_t value = 0;
+    for (unsigned i = 0; i < count; i++) {
+        value = (value << 5U) | (uint64_t)uxid_symbol_value((unsigned char)body[i]);
+    }
+    return value;
+}
+
+/* The decoder's clock in milliseconds, 0 on success. */
+static int uxid_decode_clock(const uxid_decode_options *opts, uint64_t *now)
+{
+    int failed = opts->clock != NULL ? opts->clock(opts->clock_ctx, now) : uxid_now_ms(now);
+    if (failed != 0 || *now > UXID_MAX_TIME) {
+        return -1;
+    }
+    return 0;
+}
+
+/* True when the body starts with the deterministic marker, z or Z. */
+static bool uxid_is_marker(const char *body)
+{
+    if (body[0] == 'z' || body[0] == 'Z') {
+        return true;
+    }
+    return false;
+}
+static bool uxid_decode_options_valid(const uxid_decode_options *opts)
+{
+    if (opts->delimiter == NULL || opts->delimiter[0] == '\0') {
+        return false;
+    }
+    for (size_t i = 0; i < UXID_DECODE_RESERVED_SLOTS; i++) {
+        if (opts->reserved[i] != NULL) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static void uxid_decoded_clear(uxid_decoded *out)
+{
+    memset(out, 0, sizeof *out);
+    out->prefix = NULL;
+    out->prefix_len = 0;
+    out->size = UXID_SIZE_XS;
+    out->compact = false;
+    out->deterministic = false;
+    out->has_time = false;
+    out->time = 0;
+    for (size_t i = 0; i < UXID_DECODED_RESERVED_SLOTS; i++) {
+        out->reserved[i] = NULL;
+    }
+}
+
+uxid_decode_status uxid_decode(const char *id, size_t len, const uxid_decode_options *opts, uxid_decoded *out)
+{
+    uxid_decode_options defaults;
+    if (opts == NULL) {
+        uxid_decode_options_init(&defaults);
+        opts = &defaults;
+    }
+    if (out == NULL) {
+        return UXID_DECODE_INVALID_ARGUMENT;
+    }
+    uxid_decoded_clear(out);
+    if ((id == NULL && len != 0) || !uxid_decode_options_valid(opts)) {
+        return UXID_DECODE_INVALID_ARGUMENT;
+    }
+
+    struct uxid_parsed parsed;
+    uxid_decode_status status = uxid_parse(id, len, opts->delimiter, &parsed);
+    if (status != UXID_DECODE_OK) {
+        return status;
+    }
+
+    bool deterministic = uxid_is_marker(parsed.body);
+    int64_t time = 0;
+    if (!deterministic && parsed.compact) {
+        uint64_t now = 0;
+        if (uxid_decode_clock(opts, &now) != 0) {
+            return UXID_DECODE_INVALID_ARGUMENT;
+        }
+        /* Both are at most 2^48 - 1, so they fit an int64_t. */
+        uint64_t full = (now & ~UXID_COMPACT_MASK) | uxid_read_integer(parsed.body, 8U);
+        time = (int64_t)full;
+        if (full > now && full - now > UXID_ONE_DAY_MS) {
+            time -= (int64_t)(UXID_COMPACT_MASK + 1U);
+        }
+    } else if (!deterministic) {
+        uint64_t first = uxid_read_integer(parsed.body, 1U) & 7U;
+        time = (int64_t)((first << 45U) | uxid_read_integer(parsed.body + 1, 9U));
+    }
+
+    if (parsed.prefix_end < len) {
+        out->prefix = id;
+        out->prefix_len = parsed.prefix_end;
+    }
+    out->size = parsed.size;
+    out->compact = parsed.compact;
+    out->deterministic = deterministic;
+    out->has_time = false;
+    if (!deterministic) {
+        out->has_time = true;
+    }
+    out->time = time;
+    return UXID_DECODE_OK;
+}
+
+bool uxid_is_valid(const char *id, size_t len, const char *delimiter, const char *required_prefix)
+{
+    if ((id == NULL && len != 0) || delimiter == NULL || delimiter[0] == '\0') {
+        return false;
+    }
+    struct uxid_parsed parsed;
+    if (uxid_parse(id, len, delimiter, &parsed) != UXID_DECODE_OK) {
+        return false;
+    }
+    if (required_prefix == NULL || required_prefix[0] == '\0') {
+        return true;
+    }
+    size_t required_len = strlen(required_prefix);
+    if (parsed.prefix_end == len || parsed.prefix_end != required_len) {
+        return false;
+    }
+    if (memcmp(id, required_prefix, required_len) != 0) {
+        return false;
+    }
+    return true;
+}
+
+bool uxid_is_deterministic(const char *id, size_t len, const char *delimiter)
+{
+    if ((id == NULL && len != 0) || delimiter == NULL || delimiter[0] == '\0') {
+        return false;
+    }
+    struct uxid_parsed parsed;
+    if (uxid_parse(id, len, delimiter, &parsed) != UXID_DECODE_OK) {
+        return false;
+    }
+    return uxid_is_marker(parsed.body);
+}

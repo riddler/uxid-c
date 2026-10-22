@@ -23,6 +23,16 @@
 #include <errno.h>
 #include <sys/random.h>
 #include <sys/types.h>
+/*
+ * EINTR is POSIX, not C; glibc's errno.h takes it from the kernel's
+ * errno-base.h. Naming that header as well lets clang-tidy see where it is
+ * defined.
+ */
+#if defined(__has_include)
+#if __has_include(<asm-generic/errno-base.h>)
+#include <asm-generic/errno-base.h>
+#endif
+#endif
 #else
 #include <stdlib.h>
 /*

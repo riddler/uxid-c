@@ -95,7 +95,11 @@ typedef enum uxid_status {
     UXID_ERR_RAND_WITH_MONOTONIC = 6,
     /* buffer_too_small: the output buffer cannot hold the answer and its NUL. */
     UXID_ERR_BUFFER_TOO_SMALL = 7,
-    /* random_source: the byte source, the default or an injected one, failed. */
+    /*
+     * random_source: the byte source, the default or an injected one, failed;
+     * or, for a monotonic generator, a draw source failed or answered a step
+     * outside its range.
+     */
     UXID_ERR_RANDOM_SOURCE = 8,
     /*
      * invalid_argument: an argument or an option is outside what the call
@@ -104,7 +108,9 @@ typedef enum uxid_status {
      * time-based id, a null fixed random pointer or a null from pointer with
      * a non-zero length, a non-zero reserved option), or, for a time-based
      * id, the system clock cannot be read or reads outside 0 to 2^48 - 1
-     * milliseconds.
+     * milliseconds. A monotonic generator also answers it for a random width
+     * of 0, and for a random field that overflows in millisecond 2^48 - 1, the
+     * last a time field holds.
      */
     UXID_ERR_INVALID_ARGUMENT = 9,
     /*
@@ -156,7 +162,9 @@ typedef enum uxid_case {
  * UXID_ERR_RANDOM_SOURCE. ctx is the context pointer given beside it,
  * passed through unchanged. The bytes are an id's only unpredictable part,
  * so a source given here must be cryptographically secure for any id that
- * must not be guessed.
+ * must not be guessed. A monotonic generator calls it with its lock held, and
+ * the lock is not recursive: a source must not call back into the generator
+ * that called it, which would deadlock.
  */
 typedef int (*uxid_byte_source)(void *ctx, uint8_t *out, size_t len);
 
@@ -511,7 +519,9 @@ UXID_API bool uxid_is_deterministic(const char *id, size_t len, const char *deli
  * ids: a monotonic id is exactly as guessable as its draws. A generator calls
  * it with its lock held, so a draw source one generator uses is called by one
  * thread at a time; one shared by several generators must be safe for that.
- * Write it with a designated initializer, which zeroes the reserved slots.
+ * Its functions must not call back into the generator that called them: the
+ * lock is not recursive, so that would deadlock. Write it with a designated
+ * initializer, which zeroes the reserved slots.
  */
 typedef struct uxid_draw_source {
     /*
@@ -587,7 +597,9 @@ typedef struct uxid_draw_source {
  * and updates the state with the lock held, so the ids one generator makes
  * for one prefix and random width increase strictly, as above, in the order
  * the calls take the lock, whichever thread makes them. The draw source and
- * the byte source are called with the lock held. uxid_monotonic_init() and
+ * the byte source are called with the lock held, and the lock is not
+ * recursive: neither may call back into the same generator, which would
+ * deadlock. uxid_monotonic_init() and
  * uxid_monotonic_destroy() are not ordered by the lock: no other call may use
  * the generator while either runs. The state lives in the struct and its
  * entries alone, with nothing kept in a static variable, so two generators

@@ -122,3 +122,49 @@ if(UXID_INSTALL)
       "-DUXID_EXE_LINKER_FLAGS=${CMAKE_EXE_LINKER_FLAGS}"
       -P ${CMAKE_CURRENT_SOURCE_DIR}/install_consume.cmake)
 endif()
+
+# The README's basic-usage block, built and run as it stands: the first
+# ```c block after the "## Basic usage" heading is cut out of README.md at
+# configure time (and again whenever README.md changes), so the example
+# cannot drift from the library. The test exits non-zero when any of its
+# checks fails.
+#
+# (sabotage: a wrong expected id in the README block -> test_readme_example
+# exits 1)
+set(_uxid_readme ${PROJECT_SOURCE_DIR}/README.md)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_uxid_readme})
+file(READ ${_uxid_readme} _uxid_readme_text)
+string(FIND "${_uxid_readme_text}" "\n## Basic usage\n" _uxid_usage_at)
+if(_uxid_usage_at EQUAL -1)
+  message(FATAL_ERROR "README.md has no \"## Basic usage\" heading")
+endif()
+string(SUBSTRING "${_uxid_readme_text}" ${_uxid_usage_at} -1 _uxid_usage_text)
+string(FIND "${_uxid_usage_text}" "\n```c\n" _uxid_fence_at)
+if(_uxid_fence_at EQUAL -1)
+  message(FATAL_ERROR "README.md has no c code block after \"## Basic usage\"")
+endif()
+math(EXPR _uxid_code_at "${_uxid_fence_at} + 6")
+string(SUBSTRING "${_uxid_usage_text}" ${_uxid_code_at} -1 _uxid_usage_text)
+string(FIND "${_uxid_usage_text}" "\n```\n" _uxid_code_end)
+if(_uxid_code_end EQUAL -1)
+  message(FATAL_ERROR "README.md's c code block after \"## Basic usage\" is not closed")
+endif()
+string(SUBSTRING "${_uxid_usage_text}" 0 ${_uxid_code_end} _uxid_example)
+file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/readme_example.c.new "${_uxid_example}\n")
+configure_file(${CMAKE_CURRENT_BINARY_DIR}/readme_example.c.new
+  ${CMAKE_CURRENT_BINARY_DIR}/generated/readme_example.c COPYONLY)
+
+add_executable(test_readme_example ${CMAKE_CURRENT_BINARY_DIR}/generated/readme_example.c)
+target_link_libraries(test_readme_example PRIVATE uxid::uxid)
+target_compile_options(test_readme_example PRIVATE ${UXID_WARNING_FLAGS})
+set_target_properties(test_readme_example PROPERTIES
+  C_STANDARD 11
+  C_STANDARD_REQUIRED ON
+  C_EXTENSIONS OFF)
+add_test(NAME test_readme_example COMMAND test_readme_example)
+
+# Every public declaration in include/uxid.h has a comment directly above it.
+add_test(NAME check_header_docs
+  COMMAND ${CMAKE_COMMAND}
+    -DUXID_HEADER=${PROJECT_SOURCE_DIR}/include/uxid.h
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/check_header_docs.cmake)

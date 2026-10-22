@@ -1,3 +1,24 @@
 # The vendored conformance corpus is byte-exact: a checkout never converts
 # its line endings, so the corpus hash holds on every platform.
 conformance/** -text
+
+# The release tarball is `git archive` of the tag (.github/workflows/release.yml),
+# which leaves out every path marked export-ignore here. It holds the library
+# (include/, src/), its build files (CMakeLists.txt, CMakePresets.json, cmake/,
+# scripts/), the tests (tests/, so a consumer can run CTest), the corpus
+# (conformance/), docs/, LICENSE, README.md and CHANGELOG.md. It leaves out the
+# repository's own tooling: the tracker, the agent instructions and manifest,
+# the CI and release workflows, the gate's tool pins and formatter settings,
+# the changelog fragments, and the git files.
+/.beads export-ignore
+/.claude export-ignore
+/.github export-ignore
+/AGENTS.md export-ignore
+/CLAUDE.md export-ignore
+/changelog.d export-ignore
+/mise.toml export-ignore
+/.clang-format export-ignore
+/.clang-tidy export-ignore
+/.editorconfig export-ignore
+/.gitattributes export-ignore
+/.gitignore export-ignore

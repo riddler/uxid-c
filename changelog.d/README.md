@@ -65,8 +65,8 @@ illustration of the shape, not a change this library has made:
 ## At release
 
 The release prep assembles the fragments into a new version section at the
-top of `CHANGELOG.md`, at the `##` level the file's own `## Unreleased`
-heading uses: `## X.Y.Z - YYYY-MM-DD`. The entries are grouped under the kind
+top of `CHANGELOG.md`, at the `##` level the file's version headings use:
+`## X.Y.Z - YYYY-MM-DD`. The entries are grouped under the kind
 headings, `### Added` and the rest, in the order Added, Changed, Deprecated,
 Removed, Fixed, Security; within one kind, fragments go in file-name order and
 each fragment's bullets keep their order and their `- ` marker. A `Breaking:`

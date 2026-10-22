@@ -363,7 +363,7 @@ jobs:
             *) echo "::error::the releases API answered ${status} for ${GITHUB_REF_NAME}; nothing is released" >&2; exit 1 ;;
           esac
           drafts="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases" \
-            --jq '.[] | select(.draft and .tag_name == $ENV.GITHUB_REF_NAME) | .html_url')"
+            --jq ".[] | select(.draft and .tag_name == env.GITHUB_REF_NAME) | .html_url")"
           if [ -n "$drafts" ]; then
             echo "$drafts"
             echo "::error::a draft release on ${GITHUB_REF_NAME} exists; the maintainer deletes it on the Releases page, then re-runs this job" >&2

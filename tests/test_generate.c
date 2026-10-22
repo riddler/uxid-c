@@ -622,6 +622,7 @@ static void test_status_names(void) /* (sabotage: rand-with-from -> strcmp(got, 
         {UXID_ERR_BUFFER_TOO_SMALL, 7, "buffer_too_small"},
         {UXID_ERR_RANDOM_SOURCE, 8, "random_source"},
         {UXID_ERR_INVALID_ARGUMENT, 9, "invalid_argument"},
+        {UXID_ERR_OUT_OF_RESOURCES, 10, "out_of_resources"},
     };
     for (size_t i = 0; i < sizeof names / sizeof names[0]; i++) {
         uxid_status status = names[i].status;
@@ -630,7 +631,7 @@ static void test_status_names(void) /* (sabotage: rand-with-from -> strcmp(got, 
         const char *got = uxid_status_name(status);
         assert(strcmp(got, name) == 0);
     }
-    assert(strcmp(uxid_status_name((uxid_status)runtime_int("10")), "unknown") == 0);
+    assert(strcmp(uxid_status_name((uxid_status)runtime_int("11")), "unknown") == 0);
 }
 
 int main(void)

@@ -97,11 +97,21 @@ if(_uxid_type STREQUAL "SHARED_LIBRARY")
   target_compile_definitions(uxid PRIVATE UXID_BUILDING_SHARED)
 endif()
 
-# The default byte source on Windows is BCryptGenRandom, from bcrypt.
+# The default byte source on Windows is BCryptGenRandom, from bcrypt. On
+# POSIX the monotonic generator's lock is a pthread mutex, from the platform
+# thread library, linked with -pthread; on Windows it is an SRWLOCK, from the
+# system libraries every program links.
 set(UXID_PC_LIBS_PRIVATE "")
+set(UXID_NEEDS_THREADS OFF)
 if(WIN32)
   target_link_libraries(uxid PRIVATE bcrypt)
   set(UXID_PC_LIBS_PRIVATE "-lbcrypt")
+else()
+  set(THREADS_PREFER_PTHREAD_FLAG ON)
+  find_package(Threads REQUIRED)
+  target_link_libraries(uxid PRIVATE Threads::Threads)
+  set(UXID_PC_LIBS_PRIVATE "-pthread")
+  set(UXID_NEEDS_THREADS ON)
 endif()
 
 if(UXID_INSTALL)

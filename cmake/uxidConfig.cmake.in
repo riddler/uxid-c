@@ -1,5 +1,13 @@
 @PACKAGE_INIT@
 
+# On POSIX uxid links the platform thread library (-pthread), which a static
+# uxid passes on to the programs that link it, so the package finds Threads.
+if(@UXID_NEEDS_THREADS@)
+  include(CMakeFindDependencyMacro)
+  set(THREADS_PREFER_PTHREAD_FLAG ON)
+  find_dependency(Threads)
+endif()
+
 include("${CMAKE_CURRENT_LIST_DIR}/uxidTargets.cmake")
 
 check_required_components(uxid)

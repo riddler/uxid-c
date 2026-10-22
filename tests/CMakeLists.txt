@@ -26,6 +26,12 @@ uxid_add_test(test_generate)
 uxid_add_test(test_deterministic)
 uxid_add_test(test_decode)
 uxid_add_test(test_decode_fuzz)
+uxid_add_test(test_monotonic)
+# test_monotonic starts threads of its own: pthreads on POSIX, the Windows
+# thread API on Windows.
+if(NOT WIN32)
+  target_link_libraries(test_monotonic PRIVATE Threads::Threads)
+endif()
 
 # test_sha256 checks the library's SHA-256 against the FIPS 180-4 example
 # vectors. Its functions are static in src/uxid.c, so the test compiles them

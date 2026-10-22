@@ -167,11 +167,12 @@ and deterministic (`uxid_options`, `uxid_options_init`, `uxid_generate`,
 `uxid_status` and `uxid_status_name`), decoding (`uxid_decode_options`,
 `uxid_decode_options_init`, `uxid_clock`, `uxid_decoded`, `uxid_decode` and
 `uxid_decode_status`) and the validity checks (`uxid_is_valid` and
-`uxid_is_deterministic`); `src/uxid.c` holds its own SHA-256 for the
-deterministic ids. The monotonic generator and the vendored corpus arrive
-with later changes; until they do,
-the sentences in this file about the 1.0.0 package and its corpus describe
-the target, not the current tree.
+`uxid_is_deterministic`), and the monotonic generator (`uxid_draw_source`,
+`uxid_monotonic`, `uxid_monotonic_init`, `uxid_monotonic_next` and
+`uxid_monotonic_destroy`); `src/uxid.c` holds its own SHA-256 for the
+deterministic ids. The vendored corpus arrives with a later change; until it
+does, the sentences in this file about the 1.0.0 package and its corpus
+describe the target, not the current tree.
 
 - **The package is `uxid`.** Version 1.0.0 is its first release, a GitHub
   release on the tag `v1.0.0`.
@@ -206,7 +207,8 @@ then runs: the CMake configure and build with
 project, so a project that builds uxid through `add_subdirectory` or
 `FetchContent` gets the warnings without the errors), a second build with
 AddressSanitizer and UndefinedBehaviorSanitizer and its CTest run
-(`asan-ubsan`, a shared library, so the gate builds both kinds), the
+(`asan-ubsan`, a shared library, so the gate builds both kinds), a third
+with ThreadSanitizer and its CTest run (`tsan`, a shared library), the
 clang-format check, clang-tidy over the `default` preset's compile database (on macOS
 with the SDK path from `xcrun`, which LLVM's own clang-tidy does not know),
 and line coverage of `src/` at 90 percent (`coverage`, clang's source-based

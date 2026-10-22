@@ -12,7 +12,8 @@ name: Release
 #
 # Two jobs, each on the tagged commit (github.sha):
 #
-# - `verify` (contents: read, and no other permission; it reads no secret)
+# - `verify` (contents: read, and no other permission; it reads no
+#   repository secret)
 #   checks the branch and the version before anything is installed, then
 #   asks the GitHub API whether a published release exists on the tag. If
 #   one does, the job reports it and every later step of the run is

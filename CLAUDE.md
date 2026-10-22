@@ -96,9 +96,10 @@ with the new version (`vX.Y.Z`) and pushes the tag. The tag push is the
 release: the release workflow (`.github/workflows/release.yml`, the file the
 release publishes from) verifies the tag and its publish job creates the
 GitHub release on it, carrying `uxid-<version>.tar.gz` (a `git archive` of
-the tag) and its `.sha256`. A failed workflow is re-run from its Actions page,
-never worked round by hand. That workflow arrives with a later change; until
-it is on `main`, nothing publishes this package.
+the tag) and its `.sha256`, with the version's `CHANGELOG.md` section as its
+notes. A failed workflow is re-run from its Actions page, never worked round
+by hand; the workflow's header says what each step checks, what a failure
+leaves behind and which re-run can go green.
 
 There is no package registry for this package. The publish job, and no other
 job or workflow, holds `contents: write`, and it creates the release with the
@@ -156,14 +157,15 @@ The tree on `main` today holds the build and the gate around a library with
 no code yet: `CMakeLists.txt` (the `uxid` library from `src/uxid.c` and
 `include/uxid.h`, its install and export rules, `uxidConfig.cmake` and
 `uxid.pc` from `cmake/`), `CMakePresets.json`, `mise.toml` with the gate
-tasks, `.clang-format`, `.clang-tidy`, the tests under `tests/` and the
-coverage script under `scripts/`, beside these agent instructions, the wurk
-manifest (`.claude/wurk.json`) and the tracker files under `.beads/`.
+tasks, `.clang-format`, `.clang-tidy`, the tests under `tests/`, the
+coverage script under `scripts/`, the CI and release workflows under
+`.github/workflows/` and the changelog fragment rule in
+`changelog.d/README.md`, beside these agent instructions, the wurk manifest
+(`.claude/wurk.json`) and the tracker files under `.beads/`.
 `include/uxid.h` declares only the version macros. The generation, decoding
-and validity code, CI, the release workflow and the vendored corpus arrive
-with later changes; until they do, the sentences in this file about the 1.0.0
-package, its corpus and its workflows describe the target, not the current
-tree.
+and validity code and the vendored corpus arrive with later changes; until
+they do, the sentences in this file about the 1.0.0 package and its corpus
+describe the target, not the current tree.
 
 - **The package is `uxid`.** Version 1.0.0 is its first release, a GitHub
   release on the tag `v1.0.0`.
@@ -199,7 +201,10 @@ AddressSanitizer and UndefinedBehaviorSanitizer and its CTest run
 clang-format check, clang-tidy over the `default` preset's compile database (on macOS
 with the SDK path from `xcrun`, which LLVM's own clang-tidy does not know),
 and line coverage of `src/` at 90 percent (`coverage`, clang's source-based
-coverage, `scripts/coverage.cmake`). The conformance corpus check joins the
+coverage, `scripts/coverage.cmake`, which takes `llvm-profdata`, `llvm-cov`
+and `llvm-nm` from `xcrun` on macOS, else from the directory the compiler's
+real path is in, else from `PATH`). The coverage step needs clang, so on
+Linux the gate runs with `CC=clang`. The conformance corpus check joins the
 gate when the corpus is vendored; until then the gate names it and checks
 nothing. While `src/` has no executable line, the coverage step passes only
 if the built library defines no external symbol; a library that defines one
@@ -207,16 +212,21 @@ with no measured line fails it.
 
 One CTest test (`install_consume`) installs the library to a scratch prefix
 under the build tree and builds and runs a consumer through
-`find_package(uxid CONFIG)` and through `pkg-config --cflags --libs uxid`.
+`find_package(uxid CONFIG)` and through `pkg-config --cflags --libs uxid`;
+with a compiler that takes cl's command-line style (MSVC, clang-cl) it runs
+the `find_package` route alone, since pkg-config's options are not cl's.
 Every preset builds with `CMAKE_BUILD_TYPE=Debug`. The tests are compiled
 with `NDEBUG` undefined (`-UNDEBUG`, `/UNDEBUG` on MSVC) whatever the build
 type, so a Release build runs them with live asserts, and each test source
 still refuses to compile if `NDEBUG` reaches it. A top-level build skips the
 tests when `UXID_BUILD_TESTS` or `BUILD_TESTING` is off.
 
-The gate proves the toolchain it runs on. CI, once it lands, proves the four
-toolchains the package supports: gcc and clang on Linux, Apple clang on
-macOS, and MSVC on Windows.
+The gate proves the toolchain it runs on. CI (`.github/workflows/ci.yml`)
+runs the full gate on Linux with clang, and builds and runs the CTest tests
+on the four toolchains the package supports: gcc and clang on Linux, Apple
+clang on macOS, and MSVC on Windows, with the `asan-ubsan` preset on Linux
+and macOS. One more job builds and tests with CMake 3.20, the minimum
+`CMakeLists.txt` declares. The workflow's header says what each job runs.
 
 ### This repo's own gate rules
 
@@ -290,7 +300,7 @@ satellite conventions rather than inventing a second set.
   2026-10-21): one header and one source, CMake with install and export
   rules and a pkg-config file, CTest, the sanitizer build, warnings as errors,
   clang-format and clang-tidy in the gate, and CI on Linux (gcc and clang),
-  macOS and Windows once CI lands. The coverage bar is 90 percent of lines
+  macOS and Windows. The coverage bar is 90 percent of lines
   (decided by the conductor under a standing consent, 2026-10-21).
 - **Caller-owned buffers and status codes.** Every output goes into a buffer
   the caller passes with its size, and every call that can fail returns a
@@ -302,7 +312,8 @@ satellite conventions rather than inventing a second set.
   form the gate rules above give.
 - Changelog: a change a user of the API could notice adds a fragment under
   `changelog.d/`, named for the bead (`changelog.d/uxc-abc.md`), in the same
-  request; tests, docs, tooling and gate changes take none. New version
+  request; tests, docs, tooling, CI and gate changes take none. The rule and
+  the fragment's shape are in `changelog.d/README.md`. New version
   sections in `CHANGELOG.md` keep the file's own heading shape; existing
   history is not rewritten.
 - Commit messages: simple present tense ("Adds ...", "Fixes ..."), body

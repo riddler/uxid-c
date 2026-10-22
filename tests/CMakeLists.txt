@@ -5,9 +5,13 @@
 function(uxid_add_test name)
   add_executable(${name} ${name}.c)
   target_link_libraries(${name} PRIVATE uxid::uxid)
+  if(MSVC)
+    set(_undefine_ndebug /UNDEBUG)
+  else()
+    set(_undefine_ndebug -UNDEBUG)
+  endif()
   target_compile_options(${name} PRIVATE ${UXID_WARNING_FLAGS}
-    $<$<C_COMPILER_ID:MSVC>:/UNDEBUG>
-    $<$<NOT:$<C_COMPILER_ID:MSVC>>:-UNDEBUG>)
+    ${_undefine_ndebug})
   target_compile_definitions(${name} PRIVATE
     UXID_TEST_PROJECT_VERSION="${PROJECT_VERSION}")
   set_target_properties(${name} PROPERTIES
@@ -20,7 +24,8 @@ endfunction()
 uxid_add_test(test_version)
 
 # Installs the library to a scratch prefix under the build tree, then builds
-# and runs a consumer through find_package and through pkg-config.
+# and runs a consumer through find_package and, with a compiler that takes
+# the -I, -L and -l options pkg-config prints, through pkg-config.
 if(UXID_INSTALL)
   add_test(NAME install_consume
     COMMAND ${CMAKE_COMMAND}
@@ -33,6 +38,7 @@ if(UXID_INSTALL)
       -DUXID_LIBDIR=${CMAKE_INSTALL_LIBDIR}
       -DUXID_INCLUDEDIR=${CMAKE_INSTALL_INCLUDEDIR}
       -DUXID_C_COMPILER=${CMAKE_C_COMPILER}
+      -DUXID_MSVC_STYLE=$<BOOL:${MSVC}>
       "-DUXID_C_FLAGS=${CMAKE_C_FLAGS}"
       "-DUXID_EXE_LINKER_FLAGS=${CMAKE_EXE_LINKER_FLAGS}"
       -P ${CMAKE_CURRENT_SOURCE_DIR}/install_consume.cmake)

@@ -16,10 +16,10 @@ extern "C" {
 #endif
 
 /* The major version of this library, as an integer constant. */
-#define UXID_VERSION_MAJOR 0
+#define UXID_VERSION_MAJOR 1
 
 /* The minor version of this library, as an integer constant. */
-#define UXID_VERSION_MINOR 1
+#define UXID_VERSION_MINOR 0
 
 /* The patch version of this library, as an integer constant. */
 #define UXID_VERSION_PATCH 0
@@ -29,7 +29,7 @@ extern "C" {
  * always equal to the three macros above. The CMake package version and the
  * pkg-config version are read from these macros.
  */
-#define UXID_VERSION_STRING "0.1.0"
+#define UXID_VERSION_STRING "1.0.0"
 
 /*
  * Marks a function this library exports. A shared build on Windows exports it

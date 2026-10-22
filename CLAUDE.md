@@ -137,10 +137,10 @@ Also avoid `bd edit`, which opens `$EDITOR` and blocks. Use
 
 ## What this project is
 
-`uxid` for C. Version 1.0.0, the package this repository is being built into,
-makes prefixed, K-sortable, Stripe-style identifiers a person can read, copy
-and route back to their resource, wire-compatible with the Elixir reference
-`uxid` and checked against its conformance corpus. It covers generation
+`uxid` for C. Version 1.0.0, its first release, makes prefixed, K-sortable,
+Stripe-style identifiers a person can read, copy and route back to their
+resource, wire-compatible with the Elixir reference `uxid` and checked against
+its conformance corpus. It covers generation
 (random, deterministic and monotonic), decoding and the validity checks, into
 caller-owned buffers with status codes. It is C11, one header
 (`include/uxid.h`) and one source (`src/uxid.c`), with no dependency beyond
@@ -152,14 +152,15 @@ requirements are `bcrypt` on Windows, for the CSPRNG, and the platform thread
 library on POSIX (`-pthread`), for the monotonic generator's lock; both are
 platform libraries, not dependencies.
 
-The tree on `main` today holds the build and the gate around the library's
-first code: `CMakeLists.txt` (the `uxid` library from `src/uxid.c` and
-`include/uxid.h`, its install and export rules, `uxidConfig.cmake` and
+The tree on `main` holds the library and the build and the gate around it:
+`CMakeLists.txt` (the `uxid` library from `src/uxid.c` and `include/uxid.h`,
+its install and export rules, `uxidConfig.cmake` and
 `uxid.pc` from `cmake/`), `CMakePresets.json`, `mise.toml` with the gate
 tasks, `.clang-format`, `.clang-tidy`, the tests under `tests/` (with the
 test-only cJSON under `tests/vendor/cJSON/`), the coverage script and the
 corpus check under `scripts/`, the conformance corpus under `conformance/`
-(kept byte-exact by `.gitattributes`), the CI and release workflows under
+(kept byte-exact by `.gitattributes`, which also leaves the repository's
+tooling out of the release tarball), the CI and release workflows under
 `.github/workflows/` and the changelog fragment rule in
 `changelog.d/README.md`, beside these agent instructions, the wurk manifest
 (`.claude/wurk.json`) and the tracker files under `.beads/`.
@@ -171,8 +172,7 @@ and deterministic (`uxid_options`, `uxid_options_init`, `uxid_generate`,
 `uxid_is_deterministic`), and the monotonic generator (`uxid_draw_source`,
 `uxid_monotonic`, `uxid_monotonic_init`, `uxid_monotonic_next` and
 `uxid_monotonic_destroy`); `src/uxid.c` holds its own SHA-256 for the
-deterministic ids. The sentences in this file about the 1.0.0 package
-describe the target, not the current tree.
+deterministic ids.
 
 - **The package is `uxid`.** Version 1.0.0 is its first release, a GitHub
   release on the tag `v1.0.0`.
@@ -184,8 +184,8 @@ describe the target, not the current tree.
   against uxid-ex with its evidence, never skipped or worked round here. An
   answer the corpus does not fix follows uxid-ex's spec at that tag.
 
-`README.md`, which a later change adds, is the user reference; `CHANGELOG.md`
-records each release.
+`README.md` is the user reference; `CHANGELOG.md` records each release from
+1.0.0.
 
 ## Build & Test
 

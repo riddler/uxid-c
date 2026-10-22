@@ -9,3 +9,4 @@ URL: https://github.com/riddler/uxid-c
 Version: @PROJECT_VERSION@
 Cflags: -I${includedir}
 Libs: -L${libdir} -luxid
+Libs.private: @UXID_PC_LIBS_PRIVATE@

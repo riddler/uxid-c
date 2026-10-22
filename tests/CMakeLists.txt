@@ -22,6 +22,7 @@ function(uxid_add_test name)
 endfunction()
 
 uxid_add_test(test_version)
+uxid_add_test(test_generate)
 
 # Installs the library to a scratch prefix under the build tree, then builds
 # and runs a consumer through find_package and, with a compiler that takes

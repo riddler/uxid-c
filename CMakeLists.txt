@@ -5,6 +5,9 @@ cmake_minimum_required(VERSION 3.20)
 # differ.
 file(STRINGS "${CMAKE_CURRENT_LIST_DIR}/include/uxid.h" _uxid_version_lines
      REGEX "^#define UXID_VERSION_(MAJOR|MINOR|PATCH|STRING) ")
+# A change to the header, a version bump included, re-runs the configure.
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+  "${CMAKE_CURRENT_LIST_DIR}/include/uxid.h")
 foreach(_uxid_part IN ITEMS MAJOR MINOR PATCH)
   set(_uxid_${_uxid_part} "")
   foreach(_uxid_line IN LISTS _uxid_version_lines)
@@ -44,14 +47,26 @@ endif()
 # or the CTest convention BUILD_TESTING is turned off.
 option(UXID_BUILD_TESTS "Build the uxid tests" ${_uxid_top_level})
 option(UXID_INSTALL "Generate the uxid install rules" ON)
+# Warnings are errors when uxid is the top-level project (the gate and CI);
+# a project that consumes it through add_subdirectory or FetchContent gets
+# the warnings without -Werror or /WX, so a newer compiler's new warning does
+# not break that project's build.
+option(UXID_WARNINGS_AS_ERRORS "Treat warnings in the uxid build as errors"
+  ${_uxid_top_level})
 
 # The warning flags follow the compiler's command-line style, not its id:
 # clang-cl reports the id Clang but takes cl's options (it reads -Wall as
 # -Weverything), and CMake's MSVC variable is true for cl and clang-cl alike.
 if(MSVC)
-  set(UXID_WARNING_FLAGS /W4 /WX)
+  set(UXID_WARNING_FLAGS /W4)
+  if(UXID_WARNINGS_AS_ERRORS)
+    list(APPEND UXID_WARNING_FLAGS /WX)
+  endif()
 elseif(CMAKE_C_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$")
-  set(UXID_WARNING_FLAGS -Wall -Wextra -Wpedantic -Werror)
+  set(UXID_WARNING_FLAGS -Wall -Wextra -Wpedantic)
+  if(UXID_WARNINGS_AS_ERRORS)
+    list(APPEND UXID_WARNING_FLAGS -Werror)
+  endif()
 else()
   set(UXID_WARNING_FLAGS "")
 endif()
@@ -71,7 +86,23 @@ set_target_properties(uxid PROPERTIES
   C_EXTENSIONS OFF
   VERSION ${PROJECT_VERSION}
   SOVERSION ${PROJECT_VERSION_MAJOR}
-  EXPORT_NAME uxid)
+  EXPORT_NAME uxid
+  C_VISIBILITY_PRESET hidden)
+
+# A shared library exports the functions uxid.h marks with UXID_API: on
+# Windows through __declspec(dllexport) while it is built, elsewhere through
+# default visibility over the hidden preset above.
+get_target_property(_uxid_type uxid TYPE)
+if(_uxid_type STREQUAL "SHARED_LIBRARY")
+  target_compile_definitions(uxid PRIVATE UXID_BUILDING_SHARED)
+endif()
+
+# The default byte source on Windows is BCryptGenRandom, from bcrypt.
+set(UXID_PC_LIBS_PRIVATE "")
+if(WIN32)
+  target_link_libraries(uxid PRIVATE bcrypt)
+  set(UXID_PC_LIBS_PRIVATE "-lbcrypt")
+endif()
 
 if(UXID_INSTALL)
   install(TARGETS uxid

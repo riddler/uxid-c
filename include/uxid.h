@@ -86,10 +86,7 @@ typedef enum uxid_status {
      * generation. No call in this version answers it.
      */
     UXID_ERR_FROM_WITH_MONOTONIC = 4,
-    /*
-     * rand_with_from: fixed random bytes asked for with a deterministic id.
-     * No call in this version answers it.
-     */
+    /* rand_with_from: fixed random bytes asked for with a deterministic id. */
     UXID_ERR_RAND_WITH_FROM = 5,
     /*
      * rand_with_monotonic: fixed random bytes asked for with monotonic
@@ -103,10 +100,11 @@ typedef enum uxid_status {
     /*
      * invalid_argument: an argument or an option is outside what the call
      * takes (a null output buffer, a null or empty delimiter, a size or case
-     * that is not one of its enum's values, a time above 2^48 - 1, a null
-     * fixed random pointer with a non-zero length, a non-zero reserved
-     * option), or the system clock cannot be read or reads outside 0 to
-     * 2^48 - 1 milliseconds.
+     * that is not one of its enum's values, a time above 2^48 - 1 for a
+     * time-based id, a null fixed random pointer or a null from pointer with
+     * a non-zero length, a non-zero reserved option), or, for a time-based
+     * id, the system clock cannot be read or reads outside 0 to 2^48 - 1
+     * milliseconds.
      */
     UXID_ERR_INVALID_ARGUMENT = 9,
 } uxid_status;
@@ -159,7 +157,9 @@ typedef int (*uxid_byte_source)(void *ctx, uint8_t *out, size_t len);
 /*
  * The options uxid_generate() builds an id from. Initialize every instance
  * with uxid_options_init(), then set the fields to change; a field left as
- * uxid_options_init() set it takes the default it names.
+ * uxid_options_init() set it takes the default it names. The struct's size
+ * and the offset of every field are fixed from one version to the next: a
+ * later version places a new field in reserved slots.
  */
 typedef struct uxid_options {
     /*
@@ -236,37 +236,62 @@ typedef struct uxid_options {
     /* The context passed to byte_source; the default is NULL. */
     void *byte_source_ctx;
     /*
+     * The input of a deterministic id: from_len bytes at from, the caller's
+     * string as UTF-8, hashed as given (a zero byte among them is part of the
+     * input). NULL, the default, builds a time-based id. When not NULL, the
+     * body is the marker (z, or Z in upper case) followed by the first
+     * 5 x count bits of the SHA-256 digest of the prefix's bytes (none for no
+     * prefix), a zero byte, the from bytes, a zero byte and one byte holding
+     * count, written as count characters; count is 9, 13, 17, 21 or 25 for
+     * xs, s, m, l and xl, so the body has the size's standard length. The
+     * same prefix, from and size always give the same id, and anyone who can
+     * guess from can compute it: it is a name, not a secret. With from set,
+     * has_time, time, compact_time, has_rand_size and rand_size are not read,
+     * the system clock is not read and the byte source is not called; fixed
+     * rand bytes are refused with UXID_ERR_RAND_WITH_FROM. A non-NULL from
+     * with from_len 0 is the empty string.
+     */
+    const char *from;
+    /* The number of bytes at from. Non-zero with a NULL from is refused. */
+    size_t from_len;
+    /*
      * Reserved for options a later version adds, each of which reads zero
      * as its default. uxid_options_init() zeroes them; a non-zero slot is
      * refused with UXID_ERR_INVALID_ARGUMENT, so a caller built against a
      * later version that sets such an option is refused by an earlier
      * library rather than given an id without it.
      */
-    void *reserved[8];
+    void *reserved[6];
 } uxid_options;
 
 /*
  * Fills *opts with the defaults: no prefix, the delimiter "_", size xl, the
  * size's random field width, standard time, lower case, the system clock,
- * no fixed random bytes, and the platform's secure generator. Every reserved
- * slot is zeroed. opts must not be NULL.
+ * no fixed random bytes, the platform's secure generator, and no from (a
+ * time-based id). Every reserved slot is zeroed. A NULL opts is ignored: the
+ * call writes nothing.
  */
 UXID_API void uxid_options_init(uxid_options *opts);
 
 /*
- * Generates a time-based id into out, a buffer of out_size bytes: the prefix
- * and the delimiter (none for no prefix), then the time field and the random
- * field, then a terminating NUL. opts NULL takes every default. Lengths are
- * counted in bytes, and nothing is written at or past out[out_size].
+ * Generates an id into out, a buffer of out_size bytes: the prefix and the
+ * delimiter (none for no prefix), then the body, then a terminating NUL. The
+ * body is a time field and a random field, or, when opts->from is set, the
+ * deterministic body that field describes. opts NULL takes every default.
+ * Lengths are counted in bytes, and nothing is written at or past
+ * out[out_size].
  *
  * Returns UXID_OK when out holds the id. Otherwise it returns the first
  * refusal that applies, checked in this order: UXID_ERR_INVALID_ARGUMENT,
- * UXID_ERR_RAND_SIZE_TOO_LARGE, UXID_ERR_RAND_WIDTH_MISMATCH,
- * UXID_ERR_COMPACT_TIME_OUT_OF_RANGE, UXID_ERR_BUFFER_TOO_SMALL (out_size
- * is shorter than the id and its NUL; UXID_BODY_MAX_LENGTH says how to size
- * a buffer), then UXID_ERR_RANDOM_SOURCE; no byte source is called before
- * every earlier check has passed. On any status other than UXID_OK, out
- * holds the empty string when out is not NULL and out_size is at least 1.
+ * UXID_ERR_RAND_WITH_FROM, UXID_ERR_RAND_SIZE_TOO_LARGE,
+ * UXID_ERR_RAND_WIDTH_MISMATCH, UXID_ERR_COMPACT_TIME_OUT_OF_RANGE,
+ * UXID_ERR_BUFFER_TOO_SMALL (out_size is shorter than the id and its NUL;
+ * UXID_BODY_MAX_LENGTH says how to size a buffer), then
+ * UXID_ERR_RANDOM_SOURCE; no byte source is called before every earlier
+ * check has passed. A deterministic id reads no time and no random field, so
+ * after UXID_ERR_RAND_WITH_FROM the one refusal it can meet is
+ * UXID_ERR_BUFFER_TOO_SMALL. On any status other than UXID_OK, out holds the
+ * empty string when out is not NULL and out_size is at least 1.
  */
 UXID_API uxid_status uxid_generate(char *out, size_t out_size, const uxid_options *opts);
 

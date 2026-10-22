@@ -508,10 +508,74 @@ static void test_invalid_arguments(void) /* (sabotage: "" taken -> uxid_generate
     assert(uxid_generate(out, sizeof out, &opts) == UXID_ERR_INVALID_ARGUMENT);
 
     uxid_options_init(&opts);
+    opts.from_len = 3;
+    assert(uxid_generate(out, sizeof out, &opts) == UXID_ERR_INVALID_ARGUMENT);
+
+    uxid_options_init(&opts);
     int slot = 0;
-    opts.reserved[7] = &slot;
+    opts.reserved[5] = &slot;
     assert(uxid_generate(out, sizeof out, &opts) == UXID_ERR_INVALID_ARGUMENT);
     assert(strcmp(uxid_status_name(UXID_ERR_INVALID_ARGUMENT), "invalid_argument") == 0);
+}
+
+/* Options at the usual time that fail every check from rand_size on, as far as each step sets. */
+static uxid_options order_options(int steps, const uint8_t *rand, size_t rand_len, struct recording_source *src)
+{
+    uxid_options opts;
+    uxid_options_init(&opts);
+    opts.prefix = "usr";
+    opts.has_time = true;
+    opts.time = 1700000000000;
+    opts.byte_source = recording_draw;
+    opts.byte_source_ctx = src;
+    if (steps >= 4) {
+        /* rand_size_too_large: an explicit width of 11. */
+        opts.has_rand_size = true;
+        opts.rand_size = 11;
+    }
+    if (steps >= 3) {
+        /* rand_width_mismatch: fixed bytes that are not the width. */
+        opts.rand = rand;
+        opts.rand_len = rand_len;
+    }
+    if (steps >= 2) {
+        /* compact_time_out_of_range: a compact time at the marker. */
+        opts.compact_time = true;
+        opts.time = UINT64_C(31) << 35U;
+    }
+    return opts;
+}
+
+static void test_refusal_order(void) /* (sabotage: mismatch before rand_size -> status == expected[steps]) */
+{
+    /* Each request meets the refusal its row names and every later one; the first applies. */
+    static const uxid_status expected[] = {
+        UXID_ERR_RANDOM_SOURCE,       UXID_ERR_BUFFER_TOO_SMALL,    UXID_ERR_COMPACT_TIME_OUT_OF_RANGE,
+        UXID_ERR_RAND_WIDTH_MISMATCH, UXID_ERR_RAND_SIZE_TOO_LARGE,
+    };
+    const uint8_t rand[] = {0x01, 0x02, 0x03};
+    for (int steps = 0; steps < 5; steps++) {
+        struct recording_source src = {0, 0, -1, 0};
+        uxid_options opts = order_options(steps, rand, sizeof rand, &src);
+        char out[64];
+        memset(out, 'x', sizeof out);
+        /* Every request also fails the buffer and the byte source: 5 bytes hold no id. */
+        uxid_status status = uxid_generate(out, steps == 0 ? sizeof out : 5U, &opts);
+        assert(status == expected[steps]);
+        assert(out[0] == '\0');
+        assert(src.calls == (steps == 0 ? 1 : 0));
+    }
+
+    /* invalid_argument comes first, before rand_with_from and every refusal after it. */
+    struct recording_source src = {0, 0, -1, 0};
+    uxid_options opts = order_options(4, rand, sizeof rand, &src);
+    opts.from = "alice@example.com";
+    opts.from_len = strlen(opts.from);
+    char out[64];
+    assert(uxid_generate(out, 5U, &opts) == UXID_ERR_RAND_WITH_FROM);
+    opts.delimiter = "";
+    assert(uxid_generate(out, 5U, &opts) == UXID_ERR_INVALID_ARGUMENT);
+    assert(src.calls == 0);
 }
 
 static void test_size_aliases(void) /* (sabotage: LARGE aliases M -> strcmp(by_alias, by_name) == 0) */
@@ -589,5 +653,6 @@ int main(void)
     test_invalid_arguments();
     test_size_aliases();
     test_status_names();
+    test_refusal_order();
     return 0;
 }

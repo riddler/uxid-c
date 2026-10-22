@@ -208,8 +208,11 @@ with no measured line fails it.
 One CTest test (`install_consume`) installs the library to a scratch prefix
 under the build tree and builds and runs a consumer through
 `find_package(uxid CONFIG)` and through `pkg-config --cflags --libs uxid`.
-Every preset builds with `CMAKE_BUILD_TYPE=Debug`, and each test source
-refuses to compile when `NDEBUG` is defined.
+Every preset builds with `CMAKE_BUILD_TYPE=Debug`. The tests are compiled
+with `NDEBUG` undefined (`-UNDEBUG`, `/UNDEBUG` on MSVC) whatever the build
+type, so a Release build runs them with live asserts, and each test source
+still refuses to compile if `NDEBUG` reaches it. A top-level build skips the
+tests when `UXID_BUILD_TESTS` or `BUILD_TESTING` is off.
 
 The gate proves the toolchain it runs on. CI, once it lands, proves the four
 toolchains the package supports: gcc and clang on Linux, Apple clang on

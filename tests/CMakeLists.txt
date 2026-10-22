@@ -1,10 +1,13 @@
-# The tests assert with plain assert(). Each test source refuses to compile
-# when NDEBUG is defined, so a build type that defines it cannot run them.
+# The tests assert with plain assert(), so every test is compiled with NDEBUG
+# undefined, whatever the build type (a Release build defines it). Each test
+# source still refuses to compile if NDEBUG reaches it.
 
 function(uxid_add_test name)
   add_executable(${name} ${name}.c)
   target_link_libraries(${name} PRIVATE uxid::uxid)
-  target_compile_options(${name} PRIVATE ${UXID_WARNING_FLAGS})
+  target_compile_options(${name} PRIVATE ${UXID_WARNING_FLAGS}
+    $<$<C_COMPILER_ID:MSVC>:/UNDEBUG>
+    $<$<NOT:$<C_COMPILER_ID:MSVC>>:-UNDEBUG>)
   target_compile_definitions(${name} PRIVATE
     UXID_TEST_PROJECT_VERSION="${PROJECT_VERSION}")
   set_target_properties(${name} PROPERTIES

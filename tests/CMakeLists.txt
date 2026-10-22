@@ -23,6 +23,41 @@ endfunction()
 
 uxid_add_test(test_version)
 uxid_add_test(test_generate)
+uxid_add_test(test_deterministic)
+
+# test_sha256 checks the library's SHA-256 against the FIPS 180-4 example
+# vectors. Its functions are static in src/uxid.c, so the test compiles them
+# from a header copied out of that source: the region between the
+# "sha256: begin" and "sha256: end" markers, copied again whenever the source
+# changes. The test links nothing from the library.
+set(_uxid_source_file ${PROJECT_SOURCE_DIR}/src/uxid.c)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_uxid_source_file})
+file(READ ${_uxid_source_file} _uxid_source)
+string(FIND "${_uxid_source}" "/* sha256: begin" _uxid_sha_begin)
+string(FIND "${_uxid_source}" "/* sha256: end */" _uxid_sha_end)
+if(_uxid_sha_begin EQUAL -1 OR _uxid_sha_end EQUAL -1 OR _uxid_sha_end LESS _uxid_sha_begin)
+  message(FATAL_ERROR "src/uxid.c has no sha256: begin and sha256: end markers, in that order")
+endif()
+math(EXPR _uxid_sha_length "${_uxid_sha_end} - ${_uxid_sha_begin}")
+string(SUBSTRING "${_uxid_source}" ${_uxid_sha_begin} ${_uxid_sha_length} _uxid_sha_region)
+file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/uxid_sha256_region.h.new
+  "/* Copied by tests/CMakeLists.txt from src/uxid.c; do not edit. */\n${_uxid_sha_region}")
+configure_file(${CMAKE_CURRENT_BINARY_DIR}/uxid_sha256_region.h.new
+  ${CMAKE_CURRENT_BINARY_DIR}/generated/uxid_sha256_region.h COPYONLY)
+
+add_executable(test_sha256 test_sha256.c)
+target_include_directories(test_sha256 PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
+if(MSVC)
+  set(_uxid_sha_undefine_ndebug /UNDEBUG)
+else()
+  set(_uxid_sha_undefine_ndebug -UNDEBUG)
+endif()
+target_compile_options(test_sha256 PRIVATE ${UXID_WARNING_FLAGS} ${_uxid_sha_undefine_ndebug})
+set_target_properties(test_sha256 PROPERTIES
+  C_STANDARD 11
+  C_STANDARD_REQUIRED ON
+  C_EXTENSIONS OFF)
+add_test(NAME test_sha256 COMMAND test_sha256)
 
 # Installs the library to a scratch prefix under the build tree, then builds
 # and runs a consumer through find_package and, with a compiler that takes

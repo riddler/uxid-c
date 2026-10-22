@@ -40,6 +40,8 @@ else()
   set(_uxid_top_level OFF)
 endif()
 
+# The tests build when uxid is the top-level project, unless UXID_BUILD_TESTS
+# or the CTest convention BUILD_TESTING is turned off.
 option(UXID_BUILD_TESTS "Build the uxid tests" ${_uxid_top_level})
 option(UXID_INSTALL "Generate the uxid install rules" ON)
 
@@ -101,7 +103,7 @@ if(UXID_INSTALL)
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
 endif()
 
-if(UXID_BUILD_TESTS)
+if(UXID_BUILD_TESTS AND (NOT DEFINED BUILD_TESTING OR BUILD_TESTING))
   enable_testing()
   add_subdirectory(tests)
 endif()

@@ -1,6 +1,9 @@
 # Run by CTest as `cmake -P`: installs the built library to a scratch prefix,
-# checks the installed files, then builds and runs a consumer twice, once
-# through find_package(uxid CONFIG) and once through pkg-config.
+# checks the installed files, then builds and runs a consumer through
+# find_package(uxid CONFIG) and, unless the compiler takes cl's command-line
+# style (cl or clang-cl, UXID_MSVC_STYLE), through pkg-config: the -I, -L
+# and -l options pkg-config prints are not cl's, and pkg-config is not part
+# of a Windows toolchain.
 
 foreach(_var IN ITEMS UXID_BINARY_DIR UXID_SCRATCH UXID_CONSUMER_SOURCE
                       UXID_EXPECTED_VERSION UXID_GENERATOR UXID_C_COMPILER
@@ -58,12 +61,17 @@ if(_libs STREQUAL "")
   message(FATAL_ERROR "the install wrote no library under ${UXID_LIBDIR}/")
 endif()
 
-# 1. find_package(uxid CONFIG), from the scratch prefix only.
+# 1. find_package(uxid CONFIG), from the scratch prefix only. A Visual Studio
+# generator picks its compiler from the toolset, not from CMAKE_C_COMPILER.
 set(_cmake_build "${UXID_SCRATCH}/find_package")
+set(_compiler_arg "-DCMAKE_C_COMPILER=${UXID_C_COMPILER}")
+if(UXID_GENERATOR MATCHES "^Visual Studio")
+  set(_compiler_arg "")
+endif()
 uxid_run("${CMAKE_COMMAND}"
   -S "${UXID_CONSUMER_SOURCE}" -B "${_cmake_build}"
   -G "${UXID_GENERATOR}"
-  "-DCMAKE_C_COMPILER=${UXID_C_COMPILER}"
+  ${_compiler_arg}
   "-DCMAKE_C_FLAGS=${UXID_C_FLAGS}"
   "-DCMAKE_EXE_LINKER_FLAGS=${UXID_EXE_LINKER_FLAGS}"
   "-DCMAKE_PREFIX_PATH=${_prefix}"
@@ -81,6 +89,11 @@ uxid_run("${_consumer}")
 uxid_expect_version("${UXID_RUN_OUTPUT}" "find_package")
 
 # 2. pkg-config, reading only the installed uxid.pc.
+if(UXID_MSVC_STYLE)
+  message(STATUS "pkg-config route not run: the compiler takes cl's "
+                 "command-line style, not the options pkg-config prints")
+  return()
+endif()
 find_program(_pkg_config NAMES pkg-config pkgconf REQUIRED)
 set(ENV{PKG_CONFIG_LIBDIR} "${_prefix}/${UXID_LIBDIR}/pkgconfig")
 unset(ENV{PKG_CONFIG_PATH})

@@ -1,0 +1,208 @@
+name: CI
+
+# Three jobs.
+#
+# - `gate` runs the full gate - the command an agent must have green before
+#   committing - on Linux with clang, the compiler the gate's coverage step
+#   needs (the `coverage` preset uses clang's source-based coverage).
+# - `build` configures, builds and runs the CTest tests with the `default`
+#   preset on each toolchain the package supports: gcc and clang on Linux,
+#   Apple clang on macOS and MSVC on Windows. On Linux and macOS it also
+#   builds and tests the `asan-ubsan` preset, with AddressSanitizer and
+#   UndefinedBehaviorSanitizer; MSVC has no UndefinedBehaviorSanitizer and
+#   the preset's flags are clang's and gcc's, so the Windows entry runs the
+#   `default` preset alone. On Windows the CTest install test builds its
+#   consumer through find_package only (tests/install_consume.cmake).
+# - `cmake-floor` configures, builds and tests with CMake 3.20, the version
+#   CMakeLists.txt declares as its minimum, on Linux with gcc. CMake 3.20
+#   cannot read CMakePresets.json (its schema needs 3.21), so this job passes
+#   the `default` preset's cache variables on the command line.
+#
+# CMake comes from mise.toml in `gate` and `build` (the version the gate
+# runs) and from mise at 3.20.6 in `cmake-floor`. The C compiler is the
+# runner's own in every job; each job prints its version first.
+#
+# Every action is pinned to a full commit SHA, with its version in a
+# trailing comment.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Read-only: nothing here writes to the repository, and no secret is read.
+permissions:
+  contents: read
+
+# A newer push to the same branch or pull request supersedes the run in
+# progress.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    name: Full gate (Linux, clang)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    env:
+      CC: clang
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      # The tools come from mise.toml, provisioned by mise itself: CMake, and
+      # clang-format and clang-tidy through uv on the pinned Python. The
+      # action installs mise at the version below, runs `mise install`
+      # against mise.toml, and caches the tools.
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          version: 2026.8.2
+
+      # The gate is mise.toml's `gate` task. The command is read out of
+      # .claude/wurk.json (gate.full) rather than written here, so the gate CI
+      # runs and the gate an agent must have green are one definition. It is
+      # read and executed inside the step rather than interpolated into
+      # `run:`, so a repository file never reaches the shell as expression
+      # text. The coverage step finds llvm-profdata, llvm-cov and llvm-nm in
+      # the LLVM directory the runner's clang links into
+      # (scripts/coverage.cmake).
+      - name: Full gate
+        run: |
+          set -euo pipefail
+          mapfile -t cmd < <(jq -er '.gate.full[]' .claude/wurk.json)
+          test "${#cmd[@]}" -gt 0 || { echo "::error::gate.full is empty" >&2; exit 1; }
+          echo "gate command (.claude/wurk.json gate.full): ${cmd[*]}"
+          "${cmd[@]}"
+
+      # A gate that rewrites a tracked file or leaves an untracked file that
+      # is not ignored passes locally only because the change is then
+      # committed; here it is a failure, as it is before a release.
+      - name: Check the gate left the checkout clean
+        run: |
+          set -euo pipefail
+          if [ -n "$(git status --porcelain)" ]; then
+            git status --short
+            echo "::error::the gate left changed or untracked files" >&2
+            exit 1
+          fi
+
+  build:
+    name: Build and test (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux, gcc
+            os: ubuntu-24.04
+            cc: gcc
+            sanitizers: true
+          - name: Linux, clang
+            os: ubuntu-24.04
+            cc: clang
+            sanitizers: true
+          - name: macOS, Apple clang
+            os: macos-15
+            cc: clang
+            sanitizers: true
+          # No `cc`: CMake's default generator on Windows, Visual Studio,
+          # selects MSVC itself.
+          - name: Windows, MSVC
+            os: windows-2025
+            cc: ""
+            sanitizers: false
+
+    # mise installs only CMake in this job (install_args below); with
+    # auto-install off, `mise exec` never installs the other tools mise.toml
+    # pins.
+    env:
+      CC: ${{ matrix.cc }}
+      MISE_EXEC_AUTO_INSTALL: "false"
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          version: 2026.8.2
+          install_args: aqua:Kitware/CMake
+
+      # An empty CC is unset, so CMake picks the platform's default compiler
+      # rather than a compiler named "".
+      - name: Print the compiler and CMake
+        run: |
+          set -euo pipefail
+          if [ -z "${CC}" ]; then unset CC; echo "C compiler: the Visual Studio generator's (MSVC)"; else "${CC}" --version; fi
+          mise exec -- cmake --version
+
+      # `--config Debug` and `-C Debug` name the build type for a
+      # multi-configuration generator (Visual Studio); a single-configuration
+      # generator builds the preset's CMAKE_BUILD_TYPE, which is Debug too.
+      - name: Configure, build and CTest (default preset)
+        run: |
+          set -euo pipefail
+          if [ -z "${CC}" ]; then unset CC; fi
+          mise exec -- cmake --preset default
+          mise exec -- cmake --build --preset default --config Debug
+          mise exec -- ctest --preset default -C Debug
+
+      - name: AddressSanitizer and UndefinedBehaviorSanitizer build and CTest (asan-ubsan preset)
+        if: matrix.sanitizers
+        run: |
+          set -euo pipefail
+          mise exec -- cmake --preset asan-ubsan
+          mise exec -- cmake --build --preset asan-ubsan
+          mise exec -- ctest --preset asan-ubsan
+
+  cmake-floor:
+    name: CMake 3.20 floor (Linux, gcc)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    env:
+      CC: gcc
+      MISE_EXEC_AUTO_INSTALL: "false"
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      # mise itself, installing CMake 3.20.6 alone (the last 3.20 release)
+      # rather than the version mise.toml pins.
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          version: 2026.8.2
+          install_args: aqua:Kitware/CMake@3.20.6
+
+      # The step stops unless the CMake it runs is 3.20, so a fallback to
+      # another CMake cannot pass here.
+      - name: Configure, build and CTest with CMake 3.20
+        run: |
+          set -euo pipefail
+          "${CC}" --version
+          floor=(mise exec aqua:Kitware/CMake@3.20.6 --)
+          version="$("${floor[@]}" cmake --version | sed -n '1s/^cmake version //p')"
+          echo "cmake ${version}"
+          case "$version" in
+            3.20.*) ;;
+            *) echo "::error::expected CMake 3.20, got ${version}" >&2; exit 1 ;;
+          esac
+          "${floor[@]}" cmake -S . -B build/floor \
+            -DBUILD_SHARED_LIBS=OFF -DCMAKE_BUILD_TYPE=Debug
+          "${floor[@]}" cmake --build build/floor
+          "${floor[@]}" ctest --test-dir build/floor --output-on-failure --no-tests=error

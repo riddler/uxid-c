@@ -45,9 +45,16 @@ endif()
 option(UXID_BUILD_TESTS "Build the uxid tests" ${_uxid_top_level})
 option(UXID_INSTALL "Generate the uxid install rules" ON)
 
-set(UXID_WARNING_FLAGS
-    $<$<C_COMPILER_ID:GNU,Clang,AppleClang>:-Wall -Wextra -Wpedantic -Werror>
-    $<$<C_COMPILER_ID:MSVC>:/W4 /WX>)
+# The warning flags follow the compiler's command-line style, not its id:
+# clang-cl reports the id Clang but takes cl's options (it reads -Wall as
+# -Weverything), and CMake's MSVC variable is true for cl and clang-cl alike.
+if(MSVC)
+  set(UXID_WARNING_FLAGS /W4 /WX)
+elseif(CMAKE_C_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$")
+  set(UXID_WARNING_FLAGS -Wall -Wextra -Wpedantic -Werror)
+else()
+  set(UXID_WARNING_FLAGS "")
+endif()
 
 # BUILD_SHARED_LIBS decides between a static and a shared library.
 add_library(uxid src/uxid.c)

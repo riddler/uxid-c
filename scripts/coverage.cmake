@@ -17,7 +17,23 @@ endforeach()
 get_filename_component(_build "${UXID_BUILD_DIR}" ABSOLUTE)
 get_filename_component(_source "${UXID_SOURCE_DIR}" REALPATH)
 
-# The LLVM tools: through xcrun on macOS, from PATH elsewhere.
+# The C compiler the coverage build used, from its CMake cache, followed to
+# its real file: on Linux /usr/bin/clang is a link into the LLVM directory
+# that also holds that release's llvm-profdata and llvm-cov, whose profile
+# format matches the compiler's.
+set(_compiler_dir "")
+if(EXISTS "${_build}/CMakeCache.txt")
+  file(STRINGS "${_build}/CMakeCache.txt" _compiler_line
+       REGEX "^CMAKE_C_COMPILER:[A-Z]+=")
+  if(_compiler_line MATCHES "^CMAKE_C_COMPILER:[A-Z]+=(.+)$")
+    get_filename_component(_compiler_real "${CMAKE_MATCH_1}" REALPATH)
+    get_filename_component(_compiler_dir "${_compiler_real}" DIRECTORY)
+  endif()
+endif()
+
+# The LLVM tools: through xcrun on macOS, else from the compiler's real
+# directory, else from PATH. Each tool has its own result variable, since
+# find_program does not search again for a variable that is already set.
 function(uxid_llvm_tool out name)
   find_program(_xcrun xcrun)
   if(_xcrun)
@@ -29,11 +45,20 @@ function(uxid_llvm_tool out name)
       return()
     endif()
   endif()
-  find_program(_tool NAMES ${name})
-  if(NOT _tool)
-    message(FATAL_ERROR "coverage needs ${name}, found neither through xcrun nor on PATH")
+  if(NOT _compiler_dir STREQUAL "")
+    find_program(_uxid_beside_${name} NAMES ${name}
+      PATHS "${_compiler_dir}" NO_DEFAULT_PATH)
+    if(_uxid_beside_${name})
+      set(${out} "${_uxid_beside_${name}}" PARENT_SCOPE)
+      return()
+    endif()
   endif()
-  set(${out} "${_tool}" PARENT_SCOPE)
+  find_program(_uxid_path_${name} NAMES ${name})
+  if(NOT _uxid_path_${name})
+    message(FATAL_ERROR "coverage needs ${name}, found neither through xcrun, "
+                        "beside the compiler (${_compiler_dir}) nor on PATH")
+  endif()
+  set(${out} "${_uxid_path_${name}}" PARENT_SCOPE)
 endfunction()
 
 function(uxid_run)
@@ -51,6 +76,9 @@ endfunction()
 uxid_llvm_tool(_profdata llvm-profdata)
 uxid_llvm_tool(_cov llvm-cov)
 uxid_llvm_tool(_nm llvm-nm)
+foreach(_tool IN ITEMS _profdata _cov _nm)
+  message(STATUS "coverage: ${_tool} is ${${_tool}}")
+endforeach()
 
 file(GLOB _profiles "${_build}/profiles/*.profraw")
 if(_profiles STREQUAL "")

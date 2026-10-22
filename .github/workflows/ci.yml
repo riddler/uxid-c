@@ -203,6 +203,7 @@ jobs:
             *) echo "::error::expected CMake 3.20, got ${version}" >&2; exit 1 ;;
           esac
           "${floor[@]}" cmake -S . -B build/floor \
-            -DBUILD_SHARED_LIBS=OFF -DCMAKE_BUILD_TYPE=Debug
+            -DBUILD_SHARED_LIBS=OFF -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
           "${floor[@]}" cmake --build build/floor
           "${floor[@]}" ctest --test-dir build/floor --output-on-failure --no-tests=error

@@ -50,7 +50,10 @@ name: Release
 # before `gh release create`, creates no release. `gh release create` makes
 # the release as a draft, uploads the two files to it and then publishes
 # it; when an upload or the publish fails, it deletes the draft it made. A
-# draft is left behind only when that deletion fails too. The release URL
+# draft can still be left behind: when that deletion fails too, when the
+# job is stopped or cut off part way (its timeout, a cancellation, a lost
+# runner) after the draft exists, or when the create call succeeds but its
+# answer is lost before gh can clean up. The release URL
 # step runs after the release exists, so a failure there leaves the release
 # in place and the run red. No failure moves or deletes the tag.
 #

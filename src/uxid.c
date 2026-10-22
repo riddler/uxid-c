@@ -9,6 +9,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
@@ -21,8 +22,15 @@
 #include <bcrypt.h>
 #elif defined(__linux__)
 #include <errno.h>
+#include <pthread.h>
 #include <sys/random.h>
 #include <sys/types.h>
+/* glibc defines the pthread types in bits/pthreadtypes.h, which pthread.h includes. */
+#ifdef __has_include
+#if __has_include(<bits/pthreadtypes.h>)
+#include <bits/pthreadtypes.h>
+#endif
+#endif
 /*
  * EINTR is POSIX, not C; glibc's errno.h takes it from the kernel's
  * errno-base.h. Naming that header as well lets clang-tidy see where it is
@@ -34,7 +42,13 @@
 #endif
 #endif
 #else
-#include <stdlib.h>
+#include <pthread.h>
+/* Recent macOS SDKs define pthread_mutex_t in its own header, which pthread.h includes. */
+#if defined(__APPLE__) && defined(__has_include)
+#if __has_include(<sys/_pthread/_pthread_mutex_t.h>)
+#include <sys/_pthread/_pthread_mutex_t.h>
+#endif
+#endif
 /*
  * Recent macOS SDKs declare arc4random_buf in _stdlib.h, which stdlib.h
  * includes; naming it as well lets clang-tidy see the declaring header.
@@ -154,6 +168,8 @@ const char *uxid_status_name(uxid_status status)
         return "random_source";
     case UXID_ERR_INVALID_ARGUMENT:
         return "invalid_argument";
+    case UXID_ERR_OUT_OF_RESOURCES:
+        return "out_of_resources";
     default:
         return "unknown";
     }
@@ -891,4 +907,366 @@ bool uxid_is_deterministic(const char *id, size_t len, const char *delimiter)
         return false;
     }
     return uxid_is_marker(parsed.body);
+}
+
+/* One prefix and random width's state: the last id's time and random value. */
+struct uxid_monotonic_entry {
+    /* A copy of the prefix's bytes, or NULL for no prefix. */
+    char *prefix;
+    size_t prefix_len;
+    size_t width;
+    uint64_t time;
+    /* The random value, big-endian, in its first width bytes. */
+    uint8_t value[UXID_MAX_RAND_BYTES];
+};
+
+/* What a uxid_monotonic's storage holds. */
+struct uxid_monotonic_state {
+#ifdef _WIN32
+    SRWLOCK lock;
+#else
+    pthread_mutex_t lock;
+#endif
+    bool has_draws;
+    uxid_draw_source draws;
+    struct uxid_monotonic_entry *entries;
+    size_t count;
+    size_t capacity;
+};
+
+_Static_assert(sizeof(struct uxid_monotonic_state) <= sizeof(((uxid_monotonic *)0)->opaque),
+               "the generator's state fits the storage uxid_monotonic gives it");
+_Static_assert(_Alignof(struct uxid_monotonic_state) <= _Alignof(uxid_monotonic),
+               "uxid_monotonic is aligned for the generator's state");
+
+/* The number of reserved draw source slots. */
+#define UXID_DRAW_RESERVED_SLOTS (sizeof((uxid_draw_source *)0)->reserved / sizeof((uxid_draw_source *)0)->reserved[0])
+
+static struct uxid_monotonic_state *uxid_monotonic_state_of(uxid_monotonic *gen)
+{
+    void *storage = &gen->opaque;
+    return storage;
+}
+
+static int uxid_monotonic_lock_init(struct uxid_monotonic_state *state)
+{
+#ifdef _WIN32
+    InitializeSRWLock(&state->lock);
+    return 0;
+#else
+    return pthread_mutex_init(&state->lock, NULL);
+#endif
+}
+
+static void uxid_monotonic_lock(struct uxid_monotonic_state *state)
+{
+#ifdef _WIN32
+    AcquireSRWLockExclusive(&state->lock);
+#else
+    (void)pthread_mutex_lock(&state->lock);
+#endif
+}
+
+static void uxid_monotonic_unlock(struct uxid_monotonic_state *state)
+{
+#ifdef _WIN32
+    ReleaseSRWLockExclusive(&state->lock);
+#else
+    (void)pthread_mutex_unlock(&state->lock);
+#endif
+}
+
+uxid_status uxid_monotonic_init(uxid_monotonic *gen, const uxid_draw_source *draws)
+{
+    if (gen == NULL) {
+        return UXID_ERR_INVALID_ARGUMENT;
+    }
+    if (draws != NULL) {
+        if (draws->seed == NULL || draws->step == NULL) {
+            return UXID_ERR_INVALID_ARGUMENT;
+        }
+        for (size_t i = 0; i < UXID_DRAW_RESERVED_SLOTS; i++) {
+            if (draws->reserved[i] != NULL) {
+                return UXID_ERR_INVALID_ARGUMENT;
+            }
+        }
+    }
+    memset(gen, 0, sizeof *gen);
+    struct uxid_monotonic_state *state = uxid_monotonic_state_of(gen);
+    if (uxid_monotonic_lock_init(state) != 0) {
+        return UXID_ERR_OUT_OF_RESOURCES;
+    }
+    state->has_draws = draws != NULL;
+    if (draws != NULL) {
+        state->draws = *draws;
+    }
+    state->entries = NULL;
+    state->count = 0;
+    state->capacity = 0;
+    return UXID_OK;
+}
+
+void uxid_monotonic_destroy(uxid_monotonic *gen)
+{
+    if (gen == NULL) {
+        return;
+    }
+    struct uxid_monotonic_state *state = uxid_monotonic_state_of(gen);
+    for (size_t i = 0; i < state->count; i++) {
+        free(state->entries[i].prefix);
+    }
+    free(state->entries);
+    state->entries = NULL;
+    state->count = 0;
+    state->capacity = 0;
+#ifndef _WIN32
+    (void)pthread_mutex_destroy(&state->lock);
+#endif
+}
+
+/* The entry for a prefix and width, or NULL when the generator has none. */
+static struct uxid_monotonic_entry *uxid_monotonic_find(struct uxid_monotonic_state *state, const char *prefix,
+                                                        size_t prefix_len, size_t width)
+{
+    for (size_t i = 0; i < state->count; i++) {
+        struct uxid_monotonic_entry *entry = &state->entries[i];
+        if (entry->width == width && entry->prefix_len == prefix_len &&
+            (prefix_len == 0 || memcmp(entry->prefix, prefix, prefix_len) == 0)) {
+            return entry;
+        }
+    }
+    return NULL;
+}
+
+/*
+ * Makes room for one more entry and copies the prefix for it into *copy
+ * (NULL for no prefix), without adding the entry; false when memory runs out.
+ */
+static bool uxid_monotonic_reserve(struct uxid_monotonic_state *state, const char *prefix, size_t prefix_len,
+                                   char **copy)
+{
+    *copy = NULL;
+    if (state->count == state->capacity) {
+        size_t capacity = state->capacity == 0 ? 4U : state->capacity * 2U;
+        if (capacity > SIZE_MAX / sizeof *state->entries) {
+            return false;
+        }
+        struct uxid_monotonic_entry *grown = realloc(state->entries, capacity * sizeof *grown);
+        if (grown == NULL) {
+            return false;
+        }
+        state->entries = grown;
+        state->capacity = capacity;
+    }
+    if (prefix_len > 0) {
+        if (prefix_len == SIZE_MAX) {
+            return false;
+        }
+        *copy = malloc(prefix_len + 1U);
+        if (*copy == NULL) {
+            return false;
+        }
+        memcpy(*copy, prefix, prefix_len);
+        (*copy)[prefix_len] = '\0';
+    }
+    return true;
+}
+
+/* A fresh random value for a field of width bytes, 0 on success. */
+static int uxid_monotonic_seed(const struct uxid_monotonic_state *state, const uxid_options *opts, uint8_t *value,
+                               size_t width)
+{
+    if (state->has_draws) {
+        return state->draws.seed(state->draws.ctx, value, width);
+    }
+    return uxid_draw(opts, value, width);
+}
+
+/* A step from 1 to 2^(4 x width), uniform over it, 0 on success. */
+static int uxid_monotonic_step(const struct uxid_monotonic_state *state, const uxid_options *opts, size_t width,
+                               uint64_t *step)
+{
+    uint64_t max = UINT64_C(1) << (4U * width);
+    if (state->has_draws) {
+        *step = 0;
+        if (state->draws.step(state->draws.ctx, width, step) != 0 || *step < 1U || *step > max) {
+            return -1;
+        }
+        return 0;
+    }
+    uint8_t bytes[(UXID_MAX_RAND_BYTES + 1U) / 2U];
+    size_t count = (width + 1U) / 2U;
+    if (uxid_draw(opts, bytes, count) != 0) {
+        return -1;
+    }
+    uint64_t drawn = 0;
+    for (size_t i = 0; i < count; i++) {
+        drawn = (drawn << 8U) | bytes[i];
+    }
+    *step = (drawn & (max - 1U)) + 1U;
+    return 0;
+}
+
+/* Adds step to the big-endian value of width bytes; false when it overflows. */
+static bool uxid_add_step(uint8_t *value, size_t width, uint64_t step)
+{
+    uint64_t carry = step;
+    for (size_t i = width; i > 0 && carry != 0; i--) {
+        uint64_t sum = (uint64_t)value[i - 1U] + (carry & 0xFFU);
+        value[i - 1U] = (uint8_t)sum;
+        carry = (carry >> 8U) + (sum >> 8U);
+    }
+    return carry == 0;
+}
+
+/* The checks of uxid_monotonic_next() that need no lock; width is set on UXID_OK. */
+static uxid_status uxid_monotonic_check(const uxid_options *opts, size_t out_size, bool *compact, size_t *width)
+{
+    if (!uxid_options_valid(opts)) {
+        return UXID_ERR_INVALID_ARGUMENT;
+    }
+    if (opts->from != NULL) {
+        return UXID_ERR_FROM_WITH_MONOTONIC;
+    }
+    if (opts->rand != NULL) {
+        return UXID_ERR_RAND_WITH_MONOTONIC;
+    }
+    /* A standard xs has no random field to step; a compact xs has a 1-byte one. */
+    *compact = opts->compact_time;
+    if (opts->size == UXID_SIZE_XS) {
+        *compact = true;
+    }
+    *width = uxid_rand_bytes(opts->size, *compact);
+    if (opts->has_rand_size) {
+        if (opts->rand_size > UXID_MAX_RAND_BYTES) {
+            return UXID_ERR_RAND_SIZE_TOO_LARGE;
+        }
+        *width = opts->rand_size;
+    }
+    if (*width == 0 || (opts->has_time && opts->time > UXID_MAX_TIME)) {
+        return UXID_ERR_INVALID_ARGUMENT;
+    }
+    size_t prefix_len = 0;
+    size_t head_len = 0;
+    size_t body_len = (*compact ? 8U : 10U) + uxid_rand_chars(*width);
+    if (!uxid_head_length(opts, &prefix_len, &head_len) || head_len >= out_size || body_len >= out_size - head_len) {
+        return UXID_ERR_BUFFER_TOO_SMALL;
+    }
+    return UXID_OK;
+}
+
+/* Writes the id for a time and random value; the buffer is known to fit it. */
+static void uxid_monotonic_write(char *out, const uxid_options *opts, bool compact, uint64_t time, const uint8_t *value,
+                                 size_t width)
+{
+    const char *alphabet = opts->letter_case == UXID_CASE_UPPER ? uxid_upper_alphabet : uxid_lower_alphabet;
+    size_t prefix_len = opts->prefix == NULL ? 0U : strlen(opts->prefix);
+    char *at = out;
+    if (prefix_len > 0) {
+        size_t delimiter_len = strlen(opts->delimiter);
+        memcpy(at, opts->prefix, prefix_len);
+        at += prefix_len;
+        memcpy(at, opts->delimiter, delimiter_len);
+        at += delimiter_len;
+    }
+    if (compact) {
+        at = uxid_put_integer(at, time & UXID_COMPACT_MASK, 8U, alphabet);
+    } else {
+        at = uxid_put_integer(at, time, 10U, alphabet);
+    }
+    at = uxid_put_bytes(at, value, width, alphabet);
+    *at = '\0';
+}
+
+/* The time and random value of the next id, with the lock held. */
+static uxid_status uxid_monotonic_advance(const struct uxid_monotonic_state *state, const uxid_options *opts,
+                                          const struct uxid_monotonic_entry *last, uint64_t now, size_t width,
+                                          uint64_t *time, uint8_t *value)
+{
+    if (last != NULL && now <= last->time) {
+        uint64_t step = 0;
+        if (uxid_monotonic_step(state, opts, width, &step) != 0) {
+            return UXID_ERR_RANDOM_SOURCE;
+        }
+        memcpy(value, last->value, width);
+        if (uxid_add_step(value, width, step)) {
+            *time = last->time;
+            return UXID_OK;
+        }
+        if (last->time == UXID_MAX_TIME) {
+            return UXID_ERR_INVALID_ARGUMENT;
+        }
+        *time = last->time + 1U;
+    } else {
+        *time = now;
+    }
+    if (uxid_monotonic_seed(state, opts, value, width) != 0) {
+        return UXID_ERR_RANDOM_SOURCE;
+    }
+    return UXID_OK;
+}
+
+/* uxid_monotonic_next() once the lock is held. */
+static uxid_status uxid_monotonic_next_locked(struct uxid_monotonic_state *state, char *out, const uxid_options *opts,
+                                              bool compact, size_t width)
+{
+    uint64_t now = opts->time;
+    if (!opts->has_time && (uxid_now_ms(&now) != 0 || now > UXID_MAX_TIME)) {
+        return UXID_ERR_INVALID_ARGUMENT;
+    }
+    const char *prefix = opts->prefix == NULL ? "" : opts->prefix;
+    size_t prefix_len = strlen(prefix);
+    struct uxid_monotonic_entry *last = uxid_monotonic_find(state, prefix, prefix_len, width);
+    char *copy = NULL;
+    if (last == NULL && !uxid_monotonic_reserve(state, prefix, prefix_len, &copy)) {
+        return UXID_ERR_OUT_OF_RESOURCES;
+    }
+
+    uint64_t time = 0;
+    uint8_t value[UXID_MAX_RAND_BYTES] = {0};
+    uxid_status status = uxid_monotonic_advance(state, opts, last, now, width, &time, value);
+    if (status == UXID_OK && compact && ((time & UXID_COMPACT_MASK) >> 35U) == UXID_MARKER) {
+        status = UXID_ERR_COMPACT_TIME_OUT_OF_RANGE;
+    }
+    if (status != UXID_OK) {
+        free(copy);
+        return status;
+    }
+
+    uxid_monotonic_write(out, opts, compact, time, value, width);
+    if (last == NULL) {
+        last = &state->entries[state->count++];
+        last->prefix = copy;
+        last->prefix_len = prefix_len;
+        last->width = width;
+    }
+    last->time = time;
+    memcpy(last->value, value, width);
+    return UXID_OK;
+}
+
+uxid_status uxid_monotonic_next(uxid_monotonic *gen, char *out, size_t out_size, const uxid_options *opts)
+{
+    uxid_options defaults;
+    if (opts == NULL) {
+        uxid_options_init(&defaults);
+        opts = &defaults;
+    }
+    if (gen == NULL || out == NULL) {
+        return uxid_refuse(out, out_size, UXID_ERR_INVALID_ARGUMENT);
+    }
+    bool compact = false;
+    size_t width = 0;
+    uxid_status status = uxid_monotonic_check(opts, out_size, &compact, &width);
+    if (status != UXID_OK) {
+        return uxid_refuse(out, out_size, status);
+    }
+    struct uxid_monotonic_state *state = uxid_monotonic_state_of(gen);
+    uxid_monotonic_lock(state);
+    status = uxid_monotonic_next_locked(state, out, opts, compact, width);
+    uxid_monotonic_unlock(state);
+    if (status != UXID_OK) {
+        return uxid_refuse(out, out_size, status);
+    }
+    return UXID_OK;
 }

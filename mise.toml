@@ -42,6 +42,11 @@ cmake --preset asan-ubsan
 cmake --build --preset asan-ubsan
 ctest --preset asan-ubsan
 
+step "ThreadSanitizer build and CTest (tsan preset)"
+cmake --preset tsan
+cmake --build --preset tsan
+ctest --preset tsan
+
 step "format check (clang-format)"
 clang-format --version
 find include src tests -type f \\( -name '*.c' -o -name '*.h' \\) -print0 | xargs -0 clang-format --dry-run --Werror

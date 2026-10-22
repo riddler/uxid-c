@@ -7,7 +7,8 @@
 # The floor is never met by an empty measurement: when no line of src/ was
 # measured, the run passes only while the built library defines no external
 # symbol (a library with no code yet); a library that defines one and has no
-# measured line fails.
+# measured line fails. Once a line is measured, every C source under src/
+# must appear in the export.
 
 foreach(_var IN ITEMS UXID_BUILD_DIR UXID_SOURCE_DIR UXID_MIN_LINES)
   if("${${_var}}" STREQUAL "")
@@ -127,6 +128,25 @@ endif()
 foreach(_line IN LISTS _measured)
   message(STATUS "coverage: ${_line}")
 endforeach()
+
+# The export reads the test executables, so a source the tests never link
+# would be missing from it and from the floor's denominator: once anything is
+# measured, every C source under src/ must be in the export.
+if(NOT _count EQUAL 0)
+  file(GLOB _sources RELATIVE "${_source}" "${_source}/src/*.c")
+  foreach(_src IN LISTS _sources)
+    set(_found FALSE)
+    foreach(_line IN LISTS _measured)
+      if(_line MATCHES "^${_src} ")
+        set(_found TRUE)
+      endif()
+    endforeach()
+    if(NOT _found)
+      message(FATAL_ERROR
+        "coverage: ${_src} is not in the coverage export: no test links its code")
+    endif()
+  endforeach()
+endif()
 
 if(_count EQUAL 0)
   file(GLOB _libs "${_build}/libuxid.a" "${_build}/libuxid.so*"

@@ -153,8 +153,8 @@ requirements are `bcrypt` on Windows, for the CSPRNG, and the platform thread
 library on POSIX (`-pthread`), for the monotonic generator's lock; both are
 platform libraries, not dependencies.
 
-The tree on `main` today holds the build and the gate around a library with
-no code yet: `CMakeLists.txt` (the `uxid` library from `src/uxid.c` and
+The tree on `main` today holds the build and the gate around the library's
+first code: `CMakeLists.txt` (the `uxid` library from `src/uxid.c` and
 `include/uxid.h`, its install and export rules, `uxidConfig.cmake` and
 `uxid.pc` from `cmake/`), `CMakePresets.json`, `mise.toml` with the gate
 tasks, `.clang-format`, `.clang-tidy`, the tests under `tests/`, the
@@ -162,8 +162,10 @@ coverage script under `scripts/`, the CI and release workflows under
 `.github/workflows/` and the changelog fragment rule in
 `changelog.d/README.md`, beside these agent instructions, the wurk manifest
 (`.claude/wurk.json`) and the tracker files under `.beads/`.
-`include/uxid.h` declares only the version macros. The generation, decoding
-and validity code and the vendored corpus arrive with later changes; until
+`include/uxid.h` declares the version macros and time-based generation
+(`uxid_options`, `uxid_options_init`, `uxid_generate`, `uxid_status` and
+`uxid_status_name`). Deterministic ids, decoding, the validity checks, the
+monotonic generator and the vendored corpus arrive with later changes; until
 they do, the sentences in this file about the 1.0.0 package and its corpus
 describe the target, not the current tree.
 
@@ -195,7 +197,10 @@ clang-format and clang-tidy from LLVM's PyPI releases (installed through uv
 on a pinned Python). The full gate prints the compiler's version first and
 then runs: the CMake configure and build with
 `-Wall -Wextra -Wpedantic -Werror` (`/W4 /WX` on MSVC) and the CTest tests
-(the `default` preset, a static library), a second build with
+(the `default` preset, a static library; `-Werror` and `/WX` follow the
+`UXID_WARNINGS_AS_ERRORS` option, on only when uxid is the top-level
+project, so a project that builds uxid through `add_subdirectory` or
+`FetchContent` gets the warnings without the errors), a second build with
 AddressSanitizer and UndefinedBehaviorSanitizer and its CTest run
 (`asan-ubsan`, a shared library, so the gate builds both kinds), the
 clang-format check, clang-tidy over the `default` preset's compile database (on macOS
@@ -208,7 +213,9 @@ Linux the gate runs with `CC=clang`. The conformance corpus check joins the
 gate when the corpus is vendored; until then the gate names it and checks
 nothing. While `src/` has no executable line, the coverage step passes only
 if the built library defines no external symbol; a library that defines one
-with no measured line fails it.
+with no measured line fails it. Once a line is measured, every C source under
+`src/` must appear in the coverage export, so a source no test links cannot
+drop out of the floor's denominator.
 
 One CTest test (`install_consume`) installs the library to a scratch prefix
 under the build tree and builds and runs a consumer through

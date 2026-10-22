@@ -67,6 +67,41 @@ set_target_properties(test_sha256 PROPERTIES
   C_EXTENSIONS OFF)
 add_test(NAME test_sha256 COMMAND test_sha256)
 
+# The conformance corpus. check_corpus checks the vendored files against their
+# manifest and conformance/SOURCE.json (scripts/check_corpus.cmake, which the
+# gate also runs on its own). test_conformance runs every case the manifest
+# lists, reading JSON through the vendored cJSON (tests/vendor/cJSON),
+# which is compiled here and nowhere else: the uxid library never links it
+# and no install rule names it.
+add_test(NAME check_corpus
+  COMMAND ${CMAKE_COMMAND}
+    -DUXID_CORPUS_DIR=${PROJECT_SOURCE_DIR}/conformance
+    -P ${PROJECT_SOURCE_DIR}/scripts/check_corpus.cmake)
+
+add_library(uxid_test_cjson STATIC vendor/cJSON/cJSON.c)
+target_include_directories(uxid_test_cjson PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/vendor/cJSON)
+# A static library linked into one test executable: cJSON's functions are
+# neither exported from a DLL nor imported.
+target_compile_definitions(uxid_test_cjson PUBLIC CJSON_HIDE_SYMBOLS)
+target_compile_options(uxid_test_cjson PRIVATE ${UXID_WARNING_FLAGS})
+# The one exemption, for this vendored target alone: cJSON calls sprintf,
+# which the macOS SDK marks deprecated in the sanitizer builds, and the
+# vendored file is never edited. Every other warning stays an error here, and
+# nothing about the library's or the other tests' flags changes. (cJSON itself
+# turns off MSVC's deprecation of the same functions.)
+if(NOT MSVC AND CMAKE_C_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$")
+  target_compile_options(uxid_test_cjson PRIVATE -Wno-deprecated-declarations)
+endif()
+set_target_properties(uxid_test_cjson PROPERTIES
+  C_STANDARD 11
+  C_STANDARD_REQUIRED ON
+  C_EXTENSIONS OFF)
+
+uxid_add_test(test_conformance)
+target_link_libraries(test_conformance PRIVATE uxid_test_cjson)
+target_compile_definitions(test_conformance PRIVATE
+  UXID_CORPUS_DIR="${PROJECT_SOURCE_DIR}/conformance")
+
 # Installs the library to a scratch prefix under the build tree, then builds
 # and runs a consumer through find_package and, with a compiler that takes
 # the -I, -L and -l options pkg-config prints, through pkg-config.

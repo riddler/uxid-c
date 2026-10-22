@@ -1,0 +1,3 @@
+# The vendored conformance corpus is byte-exact: a checkout never converts
+# its line endings, so the corpus hash holds on every platform.
+conformance/** -text

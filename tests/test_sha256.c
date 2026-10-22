@@ -1,9 +1,10 @@
 /*
  * The library's SHA-256 against the example vectors of FIPS 180-4 (the empty
  * message, "abc", the 448-bit and 896-bit messages and one million 'a'
- * bytes). The functions are static in src/uxid.c, so CMake copies that
- * source's marked SHA-256 region into a header in the build tree and this
- * test includes it; the test links nothing from the library, and the library
+ * bytes), and two messages of 'a' bytes whose padding ends a block exactly.
+ * The functions are static in src/uxid.c, so CMake copies that source's
+ * marked SHA-256 region into a header in the build tree and this test
+ * includes it; the test links nothing from the library, and the library
  * exports nothing for it.
  */
 #include <assert.h>
@@ -79,10 +80,26 @@ static void test_fips_million_a(void) /* (sabotage: length added as uint16_t -> 
     free(million);
 }
 
+static void test_padding_fills_one_block(void) /* (sabotage: pad when used >= 56 -> strcmp(hex, "9f4390f8...") == 0) */
+{
+    /*
+     * 55 bytes, and 55 more than one block: the 0x80 byte leaves exactly the 8 length bytes free in
+     * the last block, so the length goes into that block and no extra block of padding is hashed.
+     */
+    char message[119];
+    memset(message, 'a', sizeof message);
+    char hex[(2 * UXID_SHA256_LENGTH) + 1];
+    digest_hex(message, 55, 64, hex);
+    assert(strcmp(hex, "9f4390f8d30c2dd92ec9f095b65e2b9ae9b0a925a5258e241c9f1e910f734318") == 0);
+    digest_hex(message, 119, 7, hex);
+    assert(strcmp(hex, "31eba51c313a5c08226adf18d4a359cfdfd8d2e816b13f4af952f7ea6584dcfb") == 0);
+}
+
 int main(void)
 {
     test_fips_short_messages();
     test_fips_two_block_messages();
     test_fips_million_a();
+    test_padding_fills_one_block();
     return 0;
 }

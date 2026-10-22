@@ -1,6 +1,7 @@
 ---
 # The C style of this repository. The gate checks every C file under
-# include/, src/ and tests/ against it (clang-format --dry-run --Werror).
+# include/, src/ and tests/ against it (clang-format --dry-run --Werror),
+# except the vendored code under tests/vendor/, kept as released.
 Language: Cpp
 BasedOnStyle: LLVM
 IndentWidth: 4

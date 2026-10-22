@@ -24,6 +24,8 @@ endfunction()
 uxid_add_test(test_version)
 uxid_add_test(test_generate)
 uxid_add_test(test_deterministic)
+uxid_add_test(test_decode)
+uxid_add_test(test_decode_fuzz)
 
 # test_sha256 checks the library's SHA-256 against the FIPS 180-4 example
 # vectors. Its functions are static in src/uxid.c, so the test compiles them

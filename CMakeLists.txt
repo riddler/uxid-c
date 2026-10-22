@@ -100,9 +100,12 @@ if(UXID_INSTALL)
     DESTINATION ${UXID_CMAKE_DIR})
 
   # The .pc file locates its prefix from its own directory, so the installed
-  # tree can be moved or installed with `cmake --install --prefix`.
+  # tree can be moved or installed with `cmake --install --prefix`. The
+  # relative path is taken under the build directory, an absolute path on
+  # every platform ("/" is not one on Windows).
   file(RELATIVE_PATH UXID_PC_PREFIX_FROM_PCFILEDIR
-    "/${CMAKE_INSTALL_LIBDIR}/pkgconfig" "/")
+    "${PROJECT_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}/pkgconfig"
+    "${PROJECT_BINARY_DIR}")
   string(REGEX REPLACE "/$" "" UXID_PC_PREFIX_FROM_PCFILEDIR
     "${UXID_PC_PREFIX_FROM_PCFILEDIR}")
   configure_file(cmake/uxid.pc.in ${PROJECT_BINARY_DIR}/uxid.pc @ONLY)

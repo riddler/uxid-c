@@ -1,0 +1,36 @@
+# The tests assert with plain assert(). Each test source refuses to compile
+# when NDEBUG is defined, so a build type that defines it cannot run them.
+
+function(uxid_add_test name)
+  add_executable(${name} ${name}.c)
+  target_link_libraries(${name} PRIVATE uxid::uxid)
+  target_compile_options(${name} PRIVATE ${UXID_WARNING_FLAGS})
+  target_compile_definitions(${name} PRIVATE
+    UXID_TEST_PROJECT_VERSION="${PROJECT_VERSION}")
+  set_target_properties(${name} PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF)
+  add_test(NAME ${name} COMMAND ${name})
+endfunction()
+
+uxid_add_test(test_version)
+
+# Installs the library to a scratch prefix under the build tree, then builds
+# and runs a consumer through find_package and through pkg-config.
+if(UXID_INSTALL)
+  add_test(NAME install_consume
+    COMMAND ${CMAKE_COMMAND}
+      -DUXID_BINARY_DIR=${PROJECT_BINARY_DIR}
+      -DUXID_CONFIG=$<CONFIG>
+      -DUXID_SCRATCH=${CMAKE_CURRENT_BINARY_DIR}/install_consume
+      -DUXID_CONSUMER_SOURCE=${CMAKE_CURRENT_SOURCE_DIR}/consumer
+      -DUXID_EXPECTED_VERSION=${PROJECT_VERSION}
+      -DUXID_GENERATOR=${CMAKE_GENERATOR}
+      -DUXID_LIBDIR=${CMAKE_INSTALL_LIBDIR}
+      -DUXID_INCLUDEDIR=${CMAKE_INSTALL_INCLUDEDIR}
+      -DUXID_C_COMPILER=${CMAKE_C_COMPILER}
+      "-DUXID_C_FLAGS=${CMAKE_C_FLAGS}"
+      "-DUXID_EXE_LINKER_FLAGS=${CMAKE_EXE_LINKER_FLAGS}"
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/install_consume.cmake)
+endif()

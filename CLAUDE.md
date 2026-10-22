@@ -152,12 +152,18 @@ requirements are `bcrypt` on Windows, for the CSPRNG, and the platform thread
 library on POSIX (`-pthread`), for the monotonic generator's lock; both are
 platform libraries, not dependencies.
 
-The tree on `main` today holds only these agent instructions, the wurk
-manifest (`.claude/wurk.json`), the tracker files under `.beads/` and a
-`.gitignore`. The library, `CMakeLists.txt`, `mise.toml` and its gate tasks,
-CI, the release workflow and the vendored corpus arrive with later changes;
-until they do, the sentences in this file about the 1.0.0 package, its corpus,
-its gate and its workflows describe the target, not the current tree.
+The tree on `main` today holds the build and the gate around a library with
+no code yet: `CMakeLists.txt` (the `uxid` library from `src/uxid.c` and
+`include/uxid.h`, its install and export rules, `uxidConfig.cmake` and
+`uxid.pc` from `cmake/`), `CMakePresets.json`, `mise.toml` with the gate
+tasks, `.clang-format`, `.clang-tidy`, the tests under `tests/` and the
+coverage script under `scripts/`, beside these agent instructions, the wurk
+manifest (`.claude/wurk.json`) and the tracker files under `.beads/`.
+`include/uxid.h` declares only the version macros. The generation, decoding
+and validity code, CI, the release workflow and the vendored corpus arrive
+with later changes; until they do, the sentences in this file about the 1.0.0
+package, its corpus and its workflows describe the target, not the current
+tree.
 
 - **The package is `uxid`.** Version 1.0.0 is its first release, a GitHub
   release on the tag `v1.0.0`.
@@ -168,13 +174,12 @@ its gate and its workflows describe the target, not the current tree.
   against uxid-ex with its evidence, never skipped or worked round here. An
   answer the corpus does not fix follows uxid-ex's spec at that tag.
 
-`README.md`, which a later change adds, is the user reference; `CHANGELOG.md`,
-which the scaffold adds, records each release.
+`README.md`, which a later change adds, is the user reference; `CHANGELOG.md`
+records each release.
 
 ## Build & Test
 
-The gate tasks live in `mise.toml`, which the scaffold adds; on a tree without
-it these commands do not run yet.
+The gate tasks live in `mise.toml`.
 
 ```bash
 mise install            # CMake, clang-format, clang-tidy and the tools mise.toml pins
@@ -183,14 +188,28 @@ mise run gate           # full gate
 ```
 
 The C compiler is the platform's own (Apple clang on macOS, gcc or clang on
-Linux, MSVC on Windows); mise pins the tools around it. Once the change that
-adds the gate tasks lands, the full gate will print the compiler's version
-first and then run: the CMake configure and build with
-`-Wall -Wextra -Wpedantic -Werror` (`/W4 /WX` on MSVC), the CTest tests, a
-second build with AddressSanitizer and UndefinedBehaviorSanitizer and its
-CTest run, the clang-format check, clang-tidy, line coverage of the library
-source at 90 percent, and the conformance corpus check once the corpus is
-vendored.
+Linux, MSVC on Windows); mise pins the tools around it: CMake, and
+clang-format and clang-tidy from LLVM's PyPI releases (installed through uv
+on a pinned Python). The full gate prints the compiler's version first and
+then runs: the CMake configure and build with
+`-Wall -Wextra -Wpedantic -Werror` (`/W4 /WX` on MSVC) and the CTest tests
+(the `default` preset, a static library), a second build with
+AddressSanitizer and UndefinedBehaviorSanitizer and its CTest run
+(`asan-ubsan`, a shared library, so the gate builds both kinds), the
+clang-format check, clang-tidy over the `default` preset's compile database (on macOS
+with the SDK path from `xcrun`, which LLVM's own clang-tidy does not know),
+and line coverage of `src/` at 90 percent (`coverage`, clang's source-based
+coverage, `scripts/coverage.cmake`). The conformance corpus check joins the
+gate when the corpus is vendored; until then the gate names it and checks
+nothing. While `src/` has no executable line, the coverage step passes only
+if the built library defines no external symbol; a library that defines one
+with no measured line fails it.
+
+One CTest test (`install_consume`) installs the library to a scratch prefix
+under the build tree and builds and runs a consumer through
+`find_package(uxid CONFIG)` and through `pkg-config --cflags --libs uxid`.
+Every preset builds with `CMAKE_BUILD_TYPE=Debug`, and each test source
+refuses to compile when `NDEBUG` is defined.
 
 The gate proves the toolchain it runs on. CI, once it lands, proves the four
 toolchains the package supports: gcc and clang on Linux, Apple clang on

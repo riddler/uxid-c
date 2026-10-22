@@ -1,0 +1,11 @@
+prefix=${pcfiledir}/@UXID_PC_PREFIX_FROM_PCFILEDIR@
+exec_prefix=${prefix}
+libdir=${prefix}/@CMAKE_INSTALL_LIBDIR@
+includedir=${prefix}/@CMAKE_INSTALL_INCLUDEDIR@
+
+Name: uxid
+Description: Prefixed, K-sortable identifiers a person can read
+URL: https://github.com/riddler/uxid-c
+Version: @PROJECT_VERSION@
+Cflags: -I${includedir}
+Libs: -L${libdir} -luxid

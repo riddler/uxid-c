@@ -399,6 +399,27 @@ static void test_refusals(void) /* (sabotage: rand first -> uxid_monotonic_next(
     uxid_monotonic_destroy(&gen);
 }
 
+static void test_argument_before_from(void) /* (sabotage: from read first -> next() == UXID_ERR_INVALID_ARGUMENT) */
+{
+    /* An option uxid_generate() refuses as an argument is refused as one before from is read. */
+    static const uint64_t seeds[] = {1};
+    struct replay r = {.seeds = seeds, .seed_count = 1};
+    uxid_monotonic gen;
+    init_replay(&gen, &r);
+    char out[ID_CAP];
+    uxid_options opts = at_time("usr", UXID_SIZE_S, false, T0);
+    opts.from = "alice@example.com";
+    opts.from_len = strlen(opts.from);
+    opts.delimiter = "";
+    assert(uxid_monotonic_next(&gen, out, sizeof out, &opts) == UXID_ERR_INVALID_ARGUMENT);
+    opts.delimiter = NULL;
+    assert(uxid_monotonic_next(&gen, out, sizeof out, &opts) == UXID_ERR_INVALID_ARGUMENT);
+    opts.delimiter = "_";
+    assert(uxid_monotonic_next(&gen, out, sizeof out, &opts) == UXID_ERR_FROM_WITH_MONOTONIC);
+    assert(r.seeds_used == 0);
+    uxid_monotonic_destroy(&gen);
+}
+
 /* The last millisecond whose compact time is not refused: the low 40 bits at 31 x 2^35 - 1. */
 #define LAST_COMPACT UINT64_C(1065151889407)
 
@@ -668,6 +689,7 @@ int main(void)
     test_state_per_key();
     test_default_draws_mask_step();
     test_refusals();
+    test_argument_before_from();
     test_refusal_keeps_state();
     test_draw_errors();
     test_max_ms();

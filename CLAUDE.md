@@ -108,8 +108,7 @@ and none is created: no agent or session lists, reads, prints or sets one,
 and nobody runs `gh secret` against this repository. vcpkg and Conan ports
 are not part of this repository. Merging the prep follows this file's merge
 row, and nothing else this file reserves for the operator changes. A prep is
-cut only on a green full gate, which will include the conformance corpus
-check.
+cut only on a green full gate, which includes the conformance corpus check.
 
 This repository keeps no decision records (`docs/adr`). A release or gating
 decision is recorded here, in the authority table and the Release preps
@@ -117,10 +116,10 @@ paragraphs, and in the header of the workflow it governs; a change a user of
 the API could notice is a changelog fragment (Conventions, below). The ID
 format itself is not decided here: it is uxid-ex's wire-format spec,
 `guides/wire-format.md` in https://github.com/riddler/uxid-ex, read at the
-tag the vendored corpus names (`conformance/SOURCE.json`, once the corpus is
-vendored). That this repository keeps no decision records was decided by the
-conductor under a standing consent, 2026-10-21; a future API decision may
-start a `docs/adr` directory.
+tag the vendored corpus names (`conformance/SOURCE.json`). That this
+repository keeps no decision records was decided by the conductor under a
+standing consent, 2026-10-21; a future API decision may start a `docs/adr`
+directory.
 
 Widening this section is a decision for the operator to make and record here.
 An agent may draft the change; it does not adopt it.
@@ -157,8 +156,10 @@ The tree on `main` today holds the build and the gate around the library's
 first code: `CMakeLists.txt` (the `uxid` library from `src/uxid.c` and
 `include/uxid.h`, its install and export rules, `uxidConfig.cmake` and
 `uxid.pc` from `cmake/`), `CMakePresets.json`, `mise.toml` with the gate
-tasks, `.clang-format`, `.clang-tidy`, the tests under `tests/`, the
-coverage script under `scripts/`, the CI and release workflows under
+tasks, `.clang-format`, `.clang-tidy`, the tests under `tests/` (with the
+test-only cJSON under `tests/vendor/cJSON/`), the coverage script and the
+corpus check under `scripts/`, the conformance corpus under `conformance/`
+(kept byte-exact by `.gitattributes`), the CI and release workflows under
 `.github/workflows/` and the changelog fragment rule in
 `changelog.d/README.md`, beside these agent instructions, the wurk manifest
 (`.claude/wurk.json`) and the tracker files under `.beads/`.
@@ -170,15 +171,15 @@ and deterministic (`uxid_options`, `uxid_options_init`, `uxid_generate`,
 `uxid_is_deterministic`), and the monotonic generator (`uxid_draw_source`,
 `uxid_monotonic`, `uxid_monotonic_init`, `uxid_monotonic_next` and
 `uxid_monotonic_destroy`); `src/uxid.c` holds its own SHA-256 for the
-deterministic ids. The vendored corpus arrives with a later change; until it
-does, the sentences in this file about the 1.0.0 package and its corpus
+deterministic ids. The sentences in this file about the 1.0.0 package
 describe the target, not the current tree.
 
 - **The package is `uxid`.** Version 1.0.0 is its first release, a GitHub
   release on the tag `v1.0.0`.
-- **The corpus is the arbiter.** `conformance/` will hold the corpus
-  vendored from uxid-ex at a release tag, its tag, commit and hash recorded in
-  `conformance/SOURCE.json`. The vendored files are never edited, and every
+- **The corpus is the arbiter.** `conformance/` holds the corpus vendored
+  from uxid-ex at a release tag (the case files, `manifest.json`, the schemas
+  and the corpus `README.md`), its repository, tag, commit and hash recorded
+  in `conformance/SOURCE.json`. The vendored files are never edited, and every
   case passes with no skip list: a case this port cannot pass is reported
   against uxid-ex with its evidence, never skipped or worked round here. An
   answer the corpus does not fix follows uxid-ex's spec at that tag.
@@ -215,13 +216,25 @@ and line coverage of `src/` at 90 percent (`coverage`, clang's source-based
 coverage, `scripts/coverage.cmake`, which takes `llvm-profdata`, `llvm-cov`
 and `llvm-nm` from `xcrun` on macOS, else from the directory the compiler's
 real path is in, else from `PATH`). The coverage step needs clang, so on
-Linux the gate runs with `CC=clang`. The conformance corpus check joins the
-gate when the corpus is vendored; until then the gate names it and checks
-nothing. While `src/` has no executable line, the coverage step passes only
+Linux the gate runs with `CC=clang`. Last, the conformance corpus check
+(`scripts/check_corpus.cmake`, with CMake's own SHA-256) checks the vendored
+files against their manifest and `conformance/SOURCE.json`: the tag and
+commit it expects, the corpus hash over the case files in the manifest's
+order, and each file's case count; a mismatch fails it and is never repaired
+by rewriting a hash. The clang-format check and clang-tidy cover this
+repository's own C code, not the vendored cJSON under `tests/vendor/`.
+While `src/` has no executable line, the coverage step passes only
 if the built library defines no external symbol; a library that defines one
 with no measured line fails it. Once a line is measured, every C source under
 `src/` must appear in the coverage export, so a source no test links cannot
 drop out of the floor's denominator.
+
+Two CTest tests run the corpus: `check_corpus` runs the corpus check above,
+and `test_conformance`, the corpus runner, runs every case of every case file
+the manifest lists, with no skip list. The runner reads JSON through cJSON,
+vendored at a pinned release with its license under `tests/vendor/cJSON/`
+(its `README.md` names the release and how it was verified); only the runner
+compiles it, so it is never part of the library or installed.
 
 One CTest test (`install_consume`) installs the library to a scratch prefix
 under the build tree and builds and runs a consumer through

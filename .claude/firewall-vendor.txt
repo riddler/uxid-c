@@ -1,0 +1,9 @@
+# Unmodified third-party files vendored into this repo, each pinned to the
+# SHA-256 of its upstream bytes (the entry in the upstream release archive).
+# A listed file whose bytes match skips the pre-push terminology and
+# planning-id line scans; its name is still scanned, and editing it ends the
+# exemption.
+#
+# <path> sha256=<hex> upstream=<name@version> [licence=<path>]
+tests/vendor/cJSON/cJSON.c sha256=298581a04a36c0165da4b0aade235c23088cb2faa58651d720ea2f3706ed0b0d upstream=cJSON@1.7.19 licence=tests/vendor/cJSON/LICENSE
+tests/vendor/cJSON/cJSON.h sha256=25b0145150d500498e4d209cec69c18c42cf818bffcc54690be3b895a2a16dee upstream=cJSON@1.7.19 licence=tests/vendor/cJSON/LICENSE

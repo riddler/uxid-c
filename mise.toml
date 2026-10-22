@@ -49,7 +49,8 @@ ctest --preset tsan
 
 step "format check (clang-format)"
 clang-format --version
-find include src tests -type f \\( -name '*.c' -o -name '*.h' \\) -print0 | xargs -0 clang-format --dry-run --Werror
+# tests/vendor holds vendored code, kept byte for byte as released.
+find include src tests -path tests/vendor -prune -o -type f \\( -name '*.c' -o -name '*.h' \\) -print0 | xargs -0 clang-format --dry-run --Werror
 
 step "clang-tidy (the default preset's compile database)"
 clang-tidy --version
@@ -66,7 +67,8 @@ cmake --build --preset coverage
 ctest --preset coverage
 cmake -DUXID_BUILD_DIR=build/coverage -DUXID_SOURCE_DIR=. -DUXID_MIN_LINES=90 -P scripts/coverage.cmake
 
-step "conformance corpus check: no corpus is vendored yet, so there is nothing to check"
+step "conformance corpus check (conformance/ against its manifest and SOURCE.json)"
+cmake -DUXID_CORPUS_DIR=conformance -P scripts/check_corpus.cmake
 
 printf '\\ngate: green\\n'
 """

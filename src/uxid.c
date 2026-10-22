@@ -28,7 +28,7 @@
  * errno-base.h. Naming that header as well lets clang-tidy see where it is
  * defined.
  */
-#if defined(__has_include)
+#ifdef __has_include
 #if __has_include(<asm-generic/errno-base.h>)
 #include <asm-generic/errno-base.h>
 #endif

@@ -161,14 +161,16 @@ jobs:
           fi
           echo "${GITHUB_REF_NAME} is on ${commit}, which is on ${DEFAULT_BRANCH}"
 
-      # The header is read with sed, before any tool is installed. The CMake
-      # project version is checked again after the gate, from the cache its
-      # configure wrote.
+      # The header is read with sed, before any tool is installed. The line
+      # takes one or more spaces before the quoted string, as the version
+      # read in CMakeLists.txt does, so a header CMake configures with is one
+      # this step reads. The CMake project version is checked again after the
+      # gate, from the cache its configure wrote.
       - name: Check the tag names UXID_VERSION_STRING
         run: |
           set -euo pipefail
           tag_version="${GITHUB_REF_NAME#v}"
-          header_version="$(sed -n 's/^#define UXID_VERSION_STRING "\([^"]*\)"$/\1/p' include/uxid.h)"
+          header_version="$(sed -n 's/^#define UXID_VERSION_STRING  *"\([^"]*\)"$/\1/p' include/uxid.h)"
           test -n "$header_version" || { echo "::error::no UXID_VERSION_STRING in include/uxid.h at the tagged commit" >&2; exit 1; }
           if [ "$tag_version" != "$header_version" ]; then
             echo "::error::${GITHUB_REF_NAME} names ${tag_version} but include/uxid.h at the tagged commit says ${header_version}; nothing is released" >&2

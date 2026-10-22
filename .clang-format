@@ -1,0 +1,18 @@
+---
+# The C style of this repository. The gate checks every C file under
+# include/, src/ and tests/ against it (clang-format --dry-run --Werror).
+Language: Cpp
+BasedOnStyle: LLVM
+IndentWidth: 4
+# Room for a test's trailing sabotage note on its definition line.
+ColumnLimit: 120
+# A function's return type stays on its definition line, and the opening
+# brace goes on the next line, so a definition line ends with the note.
+AlwaysBreakAfterReturnType: None
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterFunction: true
+AllowShortFunctionsOnASingleLine: None
+PointerAlignment: Right
+SortIncludes: CaseSensitive
+...

@@ -15,3 +15,6 @@
 # Local beads telemetry churn; the tracker syncs through its own Dolt remote
 # (`sync.remote` in `.beads/config.yaml`), not through this git repository.
 .beads/interactions.jsonl
+
+# CMake build trees: the presets write build/<preset>/.
+build/
